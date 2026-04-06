@@ -77,7 +77,8 @@ export default function WealthForecast() {
     </div>
   );
 
-  const finalValue   = data.data_points.at(-1)?.value ?? data.current_net_worth;
+  const points       = data.data_points ?? [];
+  const finalValue   = points.at(-1)?.value ?? data.current_net_worth;
   const multiplier   = data.current_net_worth > 0
     ? (finalValue / data.current_net_worth).toFixed(1)
     : "—";
@@ -111,7 +112,7 @@ export default function WealthForecast() {
       <div className="flex-1 min-h-0" style={{ minHeight: 150 }}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
-            data={data.data_points}
+            data={points}
             margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
           >
             <defs>
@@ -141,7 +142,7 @@ export default function WealthForecast() {
             <Tooltip content={<CustomTooltip />} />
             {/* Today reference */}
             <ReferenceLine
-              x={String(data.data_points[0]?.label)}
+              x={String(points[0]?.label ?? "")}
               stroke="rgba(255,255,255,0.12)"
               strokeDasharray="4 4"
               label={{
