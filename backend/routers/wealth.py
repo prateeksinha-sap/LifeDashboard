@@ -11,13 +11,16 @@ POST /api/wealth/refresh-nav — refresh MF NAVs from mfapi.in
 import os
 import io
 import csv
+import sys
 import time
+import tempfile
 from datetime import datetime, date
 from typing import Optional
+from pathlib import Path
 
 from sqlalchemy import func
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -578,4 +581,52 @@ def take_wealth_snapshot(db: Session = Depends(get_db)):
         "total_net_worth": total,
         "total_liquid":    liquid,
         "total_invested":  invested,
+    }
+
+
+@router.post("/import-statement")
+async def import_statement(
+    file:    UploadFile = File(...),
+    account: str        = Form(default="Bank Account"),
+    no_llm:  bool       = Form(default=False),
+):
+    """
+    Upload a bank statement CSV and import transactions into the DB.
+    Returns { imported, skipped, errors }.
+    """
+    # Add scripts/ dir to path so we can import import_csv
+    scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+
+    try:
+        from import_bank_statement import import_csv
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail=f"Import module unavailable: {e}")
+
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+
+    # Save upload to a temp file
+    contents = await file.read()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+        tmp.write(contents)
+        tmp_path = tmp.name
+
+    try:
+        result = await import_csv(
+            csv_path       = tmp_path,
+            account_source = account,
+            skip_duplicates= True,
+            use_llm        = not no_llm,
+        )
+    finally:
+        os.unlink(tmp_path)
+
+    return {
+        "status":   "ok",
+        "imported": result["imported"],
+        "skipped":  result["skipped"],
+        "errors":   result["errors"],
+        "filename": file.filename,
     }

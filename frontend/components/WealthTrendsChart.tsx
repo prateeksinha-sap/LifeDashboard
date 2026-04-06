@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
+import { Upload, CheckCircle, AlertCircle, Loader } from "lucide-react";
 
 const BASE = "http://localhost:8000";
 
@@ -68,17 +69,53 @@ const CustomTooltip = ({
   );
 };
 
-export default function WealthTrendsChart() {
-  const [data,    setData]    = useState<TrendsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+type UploadState = "idle" | "uploading" | "success" | "error";
 
-  useEffect(() => {
+interface UploadResult { imported: number; skipped: number; errors: number; }
+
+export default function WealthTrendsChart() {
+  const [data,         setData]         = useState<TrendsResponse | null>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [uploadState,  setUploadState]  = useState<UploadState>("idle");
+  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const loadTrends = () =>
     fetch(`${BASE}/api/wealth/trends`, { cache: "no-store" })
       .then((r) => r.json())
       .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+
+  useEffect(() => { loadTrends(); }, []);
+
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";          // reset so same file can be re-selected
+
+    setUploadState("uploading");
+    setUploadResult(null);
+
+    const form = new FormData();
+    form.append("file",    file);
+    form.append("account", "Bank Account");
+    form.append("no_llm",  "false");
+
+    try {
+      const res  = await fetch(`${BASE}/api/wealth/import-statement`, { method: "POST", body: form });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.detail ?? "Upload failed");
+      setUploadResult({ imported: json.imported, skipped: json.skipped, errors: json.errors });
+      setUploadState("success");
+      // Refresh chart data
+      setTimeout(() => loadTrends(), 400);
+      setTimeout(() => setUploadState("idle"), 5000);
+    } catch {
+      setUploadState("error");
+      setTimeout(() => setUploadState("idle"), 4000);
+    }
+  };
 
   if (loading) return (
     <div className="flex h-full items-center justify-center">
@@ -103,16 +140,52 @@ export default function WealthTrendsChart() {
             12-month income, expenses & net worth
           </p>
         </div>
-        {noData && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full"
+        {/* Upload button — always visible, state-aware */}
+        <div className="flex items-center gap-2">
+          {uploadState === "success" && uploadResult && (
+            <span className="flex items-center gap-1 text-[10px] font-medium"
+              style={{ color: "#30d158" }}>
+              <CheckCircle size={11} />
+              {uploadResult.imported} imported
+              {uploadResult.skipped > 0 && `, ${uploadResult.skipped} skipped`}
+            </span>
+          )}
+          {uploadState === "error" && (
+            <span className="flex items-center gap-1 text-[10px] font-medium"
+              style={{ color: "#ff453a" }}>
+              <AlertCircle size={11} /> Upload failed
+            </span>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={onFileChange}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploadState === "uploading"}
+            className="flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all"
             style={{
-              background: "rgba(255,159,10,0.1)",
-              color:      "#ff9f0a",
-              border:     "1px solid rgba(255,159,10,0.2)",
-            }}>
-            Import bank statement to populate
-          </span>
-        )}
+              background: uploadState === "uploading"
+                ? "rgba(255,255,255,0.06)"
+                : "rgba(10,132,255,0.12)",
+              color:      uploadState === "uploading"
+                ? "rgba(255,255,255,0.3)"
+                : "#0a84ff",
+              border: `1px solid ${uploadState === "uploading"
+                ? "rgba(255,255,255,0.08)"
+                : "rgba(10,132,255,0.25)"}`,
+              cursor: uploadState === "uploading" ? "not-allowed" : "pointer",
+            }}
+          >
+            {uploadState === "uploading"
+              ? <><Loader size={10} className="animate-spin" /> Importing…</>
+              : <><Upload size={10} /> Import CSV</>
+            }
+          </button>
+        </div>
       </div>
 
       {/* Chart */}
@@ -196,14 +269,13 @@ export default function WealthTrendsChart() {
         </ResponsiveContainer>
       </div>
 
-      {/* No-data placeholder chart overlay */}
+      {/* No-data placeholder */}
       {noData && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none"
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none gap-2"
           style={{ paddingTop: 60 }}>
-          <p className="text-[12px]" style={{ color: "rgba(255,255,255,0.18)" }}>
-            Run: <code style={{ color: "rgba(191,90,242,0.6)" }}>
-              python scripts/import_bank_statement.py statement.csv
-            </code>
+          <Upload size={18} style={{ color: "rgba(255,255,255,0.1)" }} />
+          <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>
+            Upload a bank statement CSV to see trends
           </p>
         </div>
       )}
