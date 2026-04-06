@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database.db import create_tables
 from routers import wealth, todos, priorities, bills, analytics, health
+from routers.todos import action_router
 
 app = FastAPI(title="Life Dashboard API", version="2.0.0")
 
@@ -29,6 +30,7 @@ app.include_router(priorities.router)
 app.include_router(bills.router)
 app.include_router(analytics.router)
 app.include_router(health.router)
+app.include_router(action_router)
 
 
 @app.get("/api/health")

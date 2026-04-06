@@ -12,15 +12,17 @@ import os
 import io
 import csv
 import time
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
+
+from sqlalchemy import func
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database.db import get_db
-from database.models import MFHolding, StockHolding, ManualAsset
+from database.models import MFHolding, StockHolding, ManualAsset, Transaction, HistoricalWealth
 from services.mf_nav import search_scheme_code, refresh_nav_for_holding
 from services.stock_price import get_stock_price, get_gold_price_inr_per_gram, get_multiple_prices
 
@@ -367,3 +369,213 @@ async def refresh_mf_nav(db: Session = Depends(get_db)):
 
     db.commit()
     return {"status": "ok", "updated": updated, "total": len(holdings)}
+
+
+# ════════════════════════════════════════════════════════════════════
+#  Financial Analytics — Trends, Savings Rate, Forecast, Snapshot
+# ════════════════════════════════════════════════════════════════════
+
+def _last_n_months(n: int) -> list[str]:
+    """Return the last n month strings in YYYY-MM format, oldest first."""
+    today  = date.today()
+    months = []
+    for i in range(n - 1, -1, -1):
+        m = (today.month - i - 1) % 12 + 1
+        y = today.year - ((i - today.month + 1 + 12) // 12 if (today.month - i - 1) < 0 else 0)
+        months.append(f"{y}-{m:02d}")
+    return months
+
+
+def _month_income_expenses(db: Session, month_year: str) -> tuple[float, float]:
+    """Sum Credit and Debit transactions for a given YYYY-MM."""
+    income = db.query(func.sum(Transaction.amount)).filter(
+        Transaction.transaction_type == "Credit",
+        func.strftime("%Y-%m", Transaction.date) == month_year,
+    ).scalar() or 0.0
+
+    expenses = db.query(func.sum(Transaction.amount)).filter(
+        Transaction.transaction_type == "Debit",
+        func.strftime("%Y-%m", Transaction.date) == month_year,
+    ).scalar() or 0.0
+
+    return round(float(income), 2), round(float(expenses), 2)
+
+
+def _current_net_worth_simple(db: Session) -> float:
+    """Fast net-worth estimate from DB values (no live yfinance calls)."""
+    manual   = {a.asset_type: a.value for a in db.query(ManualAsset).all()}
+    mf_val   = sum(h.value for h in db.query(MFHolding).all())
+    stk_val  = sum(
+        (s.current_price or s.avg_price) * s.quantity
+        for s in db.query(StockHolding).all()
+    )
+    gold_g   = manual.get("GOLD_GRAMS", 0)
+    gold_val = gold_g * 9_000 if gold_g > 0 else 0   # ₹9k/g fallback
+    return round(
+        mf_val + stk_val +
+        manual.get("EPF", 0) + manual.get("PPF", 0) +
+        manual.get("NPS", 0) + manual.get("BANK", 0) + gold_val,
+        2,
+    )
+
+
+@router.get("/trends")
+def get_wealth_trends(db: Session = Depends(get_db)):
+    """
+    Returns 12 months of income, expenses, and net-worth snapshots.
+    Net worth comes from historical_wealth snapshots if available;
+    falls back to the latest known value for months without a snapshot.
+    """
+    months  = _last_n_months(12)
+    latest_nw = _current_net_worth_simple(db)
+
+    result = []
+    for my in months:
+        income, expenses = _month_income_expenses(db, my)
+        snapshot = db.query(HistoricalWealth).filter_by(month_year=my).first()
+        result.append({
+            "month":     my,
+            "income":    income,
+            "expenses":  expenses,
+            "net_worth": round(snapshot.total_net_worth, 2) if snapshot else (
+                latest_nw if my == months[-1] else None
+            ),
+            "has_data":  income > 0 or expenses > 0,
+        })
+
+    return {"months": result, "has_transactions": any(r["has_data"] for r in result)}
+
+
+@router.get("/savings-rate")
+def get_savings_rate(db: Session = Depends(get_db)):
+    """
+    Current-month savings rate and trailing 6-month average.
+    Returns zero rates when no transaction data exists yet.
+    """
+    today    = date.today()
+    curr_my  = f"{today.year}-{today.month:02d}"
+
+    income_now, expenses_now = _month_income_expenses(db, curr_my)
+    savings_now = income_now - expenses_now
+    rate_now    = (savings_now / income_now * 100) if income_now > 0 else 0.0
+
+    # Trailing 6 months (excluding current)
+    past_months = _last_n_months(7)[:-1]   # 6 complete past months
+    total_inc_6m = total_exp_6m = 0.0
+    for my in past_months:
+        inc, exp = _month_income_expenses(db, my)
+        total_inc_6m += inc
+        total_exp_6m += exp
+
+    avg_savings_6m = (total_inc_6m - total_exp_6m) / 6
+    rate_6m        = (
+        (total_inc_6m - total_exp_6m) / total_inc_6m * 100
+        if total_inc_6m > 0 else 0.0
+    )
+
+    return {
+        "current_month":              curr_my,
+        "income_this_month":          income_now,
+        "expenses_this_month":        expenses_now,
+        "savings_this_month":         round(savings_now, 2),
+        "savings_rate_pct":           round(rate_now, 1),
+        "trailing_6m_avg_income":     round(total_inc_6m / 6, 2),
+        "trailing_6m_avg_expenses":   round(total_exp_6m / 6, 2),
+        "trailing_6m_avg_savings":    round(avg_savings_6m, 2),
+        "trailing_6m_savings_rate_pct": round(rate_6m, 1),
+        "has_data":                   income_now > 0 or total_inc_6m > 0,
+    }
+
+
+@router.get("/forecast")
+def get_wealth_forecast(db: Session = Depends(get_db)):
+    """
+    5-year wealth projection.
+    Assumes 8% annualised return (compounded monthly) + trailing-6m avg savings.
+    Falls back to ₹30,000/month savings if no transaction history exists.
+    """
+    # Get current net worth (prefer latest snapshot, fall back to live estimate)
+    latest_snap = (
+        db.query(HistoricalWealth)
+        .order_by(HistoricalWealth.month_year.desc())
+        .first()
+    )
+    current_nw = latest_snap.total_net_worth if latest_snap else _current_net_worth_simple(db)
+
+    # Get monthly savings from trailing 6-month average
+    past_months = _last_n_months(7)[:-1]
+    total_savings_6m = sum(
+        _month_income_expenses(db, my)[0] - _month_income_expenses(db, my)[1]
+        for my in past_months
+    )
+    monthly_savings = max(total_savings_6m / 6, 0)
+    if monthly_savings < 1000:          # no data yet — use ₹30k default
+        monthly_savings = 30_000.0
+
+    monthly_rate = 0.08 / 12           # 8% annualised → monthly
+
+    today       = date.today()
+    data_points = [{"year": today.year, "label": str(today.year), "value": round(current_nw, 0)}]
+
+    value = current_nw
+    for month in range(1, 61):         # 60 months = 5 years
+        value = value * (1 + monthly_rate) + monthly_savings
+        if month % 12 == 0:
+            yr = today.year + month // 12
+            data_points.append({"year": yr, "label": str(yr), "value": round(value, 0)})
+
+    return {
+        "current_net_worth":      round(current_nw, 0),
+        "monthly_savings_assumed": round(monthly_savings, 0),
+        "annual_return_pct":      8.0,
+        "projection_years":       5,
+        "data_points":            data_points,
+    }
+
+
+@router.post("/snapshot")
+def take_wealth_snapshot(db: Session = Depends(get_db)):
+    """
+    Capture a net-worth snapshot for the current month and persist it.
+    Call this at month-end (or manually) to build historical_wealth data.
+    Upserts — safe to call multiple times in the same month.
+    """
+    today      = date.today()
+    month_year = f"{today.year}-{today.month:02d}"
+
+    manual   = {a.asset_type: a.value for a in db.query(ManualAsset).all()}
+    mf_val   = sum(h.value for h in db.query(MFHolding).all())
+    stk_val  = sum(
+        (s.current_price or s.avg_price) * s.quantity
+        for s in db.query(StockHolding).all()
+    )
+    gold_g   = manual.get("GOLD_GRAMS", 0)
+    gold_val = gold_g * 9_000 if gold_g > 0 else 0
+
+    liquid   = manual.get("BANK", 0)
+    invested = round(mf_val + stk_val + manual.get("EPF", 0) +
+                     manual.get("PPF", 0) + manual.get("NPS", 0) + gold_val, 2)
+    total    = round(liquid + invested, 2)
+
+    snap = db.query(HistoricalWealth).filter_by(month_year=month_year).first()
+    if snap:
+        snap.total_net_worth = total
+        snap.total_liquid    = liquid
+        snap.total_invested  = invested
+        snap.updated_at      = datetime.utcnow()
+    else:
+        db.add(HistoricalWealth(
+            month_year      = month_year,
+            total_net_worth = total,
+            total_liquid    = liquid,
+            total_invested  = invested,
+        ))
+    db.commit()
+
+    return {
+        "status":     "ok",
+        "month_year": month_year,
+        "total_net_worth": total,
+        "total_liquid":    liquid,
+        "total_invested":  invested,
+    }

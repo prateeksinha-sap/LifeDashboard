@@ -170,3 +170,58 @@ class PersonalCRM(Base):
     # How many days between expected check-ins (default: monthly)
     notes                 = Column(Text,   nullable=True)
     updated_at            = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ── Bank transactions (CSV import + LLM categorisation) ───────────────
+# Populated by scripts/import_bank_statement.py.
+# transaction_type: "Credit" (money in) | "Debit" (money out)
+# category: LLM-assigned from {Salary, Utilities, Groceries, Dining,
+#            Investments, Travel, EMI, Education, Healthcare, Misc}
+class Transaction(Base):
+    __tablename__ = "transactions"
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    date             = Column(Date,    nullable=False, index=True)
+    description      = Column(String,  nullable=False)
+    amount           = Column(Float,   nullable=False)   # always positive
+    transaction_type = Column(String,  nullable=False)   # "Credit" | "Debit"
+    category         = Column(String,  nullable=True)    # LLM-assigned
+    account_source   = Column(String,  nullable=True)    # e.g. "HDFC Savings"
+    created_at       = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Monthly net-worth snapshots ────────────────────────────────────────
+# Populated by POST /api/wealth/snapshot (call at month-end or manually).
+# month_year format: "2026-04"  (YYYY-MM)
+class HistoricalWealth(Base):
+    __tablename__ = "historical_wealth"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    month_year      = Column(String,  nullable=False, unique=True)
+    total_net_worth = Column(Float,   nullable=False)
+    total_liquid    = Column(Float,   nullable=True)    # bank + cash balance
+    total_invested  = Column(Float,   nullable=True)    # MF + stocks + EPF/PPF/NPS + gold
+    created_at      = Column(DateTime, default=datetime.utcnow)
+    updated_at      = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ── Actionables (Gmail-extracted + manual tasks) ───────────────────────
+# Unified task list:
+#   • Gmail-extracted action items  (source="Gmail")
+#   • Manually added reminders      (source="Manual")
+# priority : "High" | "Medium" | "Low"
+# status   : "Pending" | "Completed"
+class Actionable(Base):
+    __tablename__ = "actionables"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    source            = Column(String,  nullable=False, default="Manual")  # "Gmail"|"Manual"
+    task_description  = Column(Text,    nullable=False)
+    due_date          = Column(Date,    nullable=True)
+    priority          = Column(String,  nullable=False, default="Medium")  # High|Medium|Low
+    status            = Column(String,  nullable=False, default="Pending") # Pending|Completed
+    original_email_id = Column(String,  nullable=True)   # Gmail message ID
+    sender            = Column(String,  nullable=True)   # email sender display name
+    subject           = Column(String,  nullable=True)   # email subject line
+    created_at        = Column(DateTime, default=datetime.utcnow)
+    updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

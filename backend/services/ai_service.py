@@ -293,6 +293,125 @@ async def extract_email_tasks(email_body: str) -> EmailExtractResult:
         )
 
 
+# ── Transaction categoriser ──────────────────────────────────────
+
+TRANSACTION_CATEGORIES = [
+    "Salary", "Utilities", "Groceries", "Dining", "Investments",
+    "Travel", "EMI", "Education", "Healthcare", "Misc",
+]
+
+_CATEGORIZE_PROMPT = """\
+You are a personal finance assistant. Categorise the following bank transaction description into exactly ONE of these categories:
+Salary, Utilities, Groceries, Dining, Investments, Travel, EMI, Education, Healthcare, Misc
+
+Rules:
+- Salary: payroll credits, salary transfers
+- Utilities: electricity, water, gas, broadband, mobile recharge
+- Groceries: supermarkets, BigBasket, Blinkit, DMart, Zepto
+- Dining: restaurants, Zomato, Swiggy, cafes
+- Investments: SIP, mutual fund, stock purchase, FD, RD, NPS
+- Travel: flights, hotels, Ola, Uber, fuel, toll
+- EMI: loan EMI, credit card EMI, home loan
+- Education: school fees, courses, books
+- Healthcare: pharmacy, hospital, lab test, insurance premium
+- Misc: anything that doesn't fit the above
+
+Transaction description: "{description}"
+
+Respond with ONLY the category name. No explanation.
+"""
+
+
+async def categorize_transaction(description: str) -> str:
+    """
+    Use the local Ollama model to assign one of the standard categories
+    to a bank transaction description.
+    Returns the category string (falls back to "Misc" on any error).
+    """
+    if not description or not description.strip():
+        return "Misc"
+
+    prompt = _CATEGORIZE_PROMPT.format(description=description[:300])
+
+    try:
+        raw = await _ollama_generate(prompt)
+        # Parse: take the first word that matches a known category
+        cleaned = raw.strip().strip('"').strip("'").split("\n")[0].strip()
+        for cat in TRANSACTION_CATEGORIES:
+            if cat.lower() in cleaned.lower():
+                return cat
+        return "Misc"
+    except httpx.ConnectError:
+        return "Misc"
+    except Exception:
+        return "Misc"
+
+
+# ── Actionables extractor (Gmail) ────────────────────────────────
+
+_ACTIONABLES_PROMPT = """\
+You are an executive assistant. Read the following email and extract any clear to-dos, action items, or upcoming key dates. Ignore conversational filler and marketing content.
+
+Output ONLY a valid JSON array of objects. Each object must have exactly these keys:
+- "task_description": string describing what needs to be done
+- "due_date": string in YYYY-MM-DD format, or null if no date mentioned
+- "priority": "High", "Medium", or "Low"
+
+Rules for priority:
+- High: payment deadlines, urgent requests, same-day or next-day actions
+- Medium: scheduled meetings, tasks due within a week
+- Low: informational follow-ups, no explicit urgency
+
+Email Subject: "{subject}"
+Body:
+{body}
+
+JSON array:"""
+
+
+async def extract_actionables_from_email(subject: str, body: str) -> list[dict]:
+    """
+    Use the local Ollama model to extract structured action items from an email.
+    Returns a list of dicts with keys: task_description, due_date, priority.
+    Returns [] on any failure (Ollama offline, bad JSON, etc.).
+    """
+    if not body or not body.strip():
+        return []
+
+    prompt = _ACTIONABLES_PROMPT.format(
+        subject=subject[:200] if subject else "No Subject",
+        body=body[:3000],
+    )
+
+    try:
+        raw  = await _ollama_generate(prompt)
+        data = _extract_json(raw)
+
+        if not isinstance(data, list):
+            return []
+
+        results = []
+        for item in data:
+            if not isinstance(item, dict) or not item.get("task_description"):
+                continue
+            priority = str(item.get("priority", "Medium")).strip().capitalize()
+            if priority not in ("High", "Medium", "Low"):
+                priority = "Medium"
+            results.append({
+                "task_description": str(item["task_description"]).strip(),
+                "due_date":         str(item["due_date"]) if item.get("due_date") else None,
+                "priority":         priority,
+            })
+        return results
+
+    except httpx.ConnectError:
+        logger.warning("Ollama unreachable — skipping actionable extraction for email")
+        return []
+    except Exception as e:
+        logger.exception("extract_actionables_from_email failed: %s", e)
+        return []
+
+
 # ── Ollama health check ───────────────────────────────────────────
 
 async def ollama_status() -> dict:

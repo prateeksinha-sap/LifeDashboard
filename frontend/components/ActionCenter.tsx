@@ -2,20 +2,35 @@
 
 import { useState, useEffect, KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Plus } from "lucide-react";
-import { fetchTodos, createTodo, patchTodo, Todo } from "@/lib/api";
+import { Plus, Mail, Zap } from "lucide-react";
+import { fetchTodos, createTodo, patchTodo, Todo, fetchActionables, markActionableDone, Actionable } from "@/lib/api";
+
+const PRIORITY_COLOR: Record<string, string> = {
+  High:   "#ff453a",
+  Medium: "#ff9f0a",
+  Low:    "#30d158",
+};
 
 export default function ActionCenter() {
-  const [todos,    setTodos] = useState<Todo[]>([]);
-  const [inputVal, setInput] = useState("");
-  const [loading,  setLoading] = useState(true);
+  const [todos,       setTodos]       = useState<Todo[]>([]);
+  const [actionables, setActionables] = useState<Actionable[]>([]);
+  const [inputVal,    setInput]       = useState("");
+  const [loading,     setLoading]     = useState(true);
 
   useEffect(() => {
     fetchTodos()
       .then(setTodos)
       .catch(() => {})
       .finally(() => setLoading(false));
+    fetchActionables("Pending")
+      .then(setActionables)
+      .catch(() => {});
   }, []);
+
+  const doneActionable = async (id: number) => {
+    setActionables((prev) => prev.filter((a) => a.id !== id));
+    try { await markActionableDone(id); } catch { /* silent */ }
+  };
 
   const toggle = async (id: number, currentDone: boolean) => {
     // Optimistic update
@@ -66,6 +81,60 @@ export default function ActionCenter() {
           </span>
         )}
       </div>
+
+      {/* ── AI Actionables ── */}
+      {actionables.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <Zap size={9} style={{ color: "#bf5af2" }} />
+            <p className="text-[9.5px] font-medium uppercase tracking-[0.12em]"
+              style={{ color: "rgba(191,90,242,0.6)" }}>
+              AI Extracted
+            </p>
+          </div>
+          <ul className="flex flex-col gap-1.5">
+            <AnimatePresence initial={false}>
+              {actionables.map((a) => (
+                <motion.li
+                  key={a.id}
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, height: 0, transition: { duration: 0.18 } }}
+                  className="flex items-start gap-2 px-2.5 py-2 rounded-xl group"
+                  style={{
+                    background: "rgba(191,90,242,0.05)",
+                    border:     "1px solid rgba(191,90,242,0.1)",
+                  }}
+                >
+                  {/* Source icon */}
+                  {a.source === "Gmail"
+                    ? <Mail size={10} className="shrink-0 mt-0.5" style={{ color: "#0a84ff" }} />
+                    : <Zap  size={10} className="shrink-0 mt-0.5" style={{ color: "#bf5af2" }} />
+                  }
+                  {/* Text */}
+                  <p className="flex-1 text-[11.5px] leading-snug"
+                    style={{ color: "rgba(255,255,255,0.65)" }}>
+                    {a.task_description}
+                  </p>
+                  {/* Priority dot + done button */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full"
+                      style={{ background: PRIORITY_COLOR[a.priority] ?? "#ff9f0a" }} />
+                    <button
+                      onClick={() => doneActionable(a.id)}
+                      className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ background: "rgba(48,209,88,0.12)", color: "#30d158" }}
+                    >
+                      Done
+                    </button>
+                  </div>
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </ul>
+          <div className="h-px my-3" style={{ background: "rgba(255,255,255,0.05)" }} />
+        </div>
+      )}
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center">

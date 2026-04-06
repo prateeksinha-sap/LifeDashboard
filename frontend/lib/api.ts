@@ -183,6 +183,105 @@ export async function markCheckedIn(id: number): Promise<void> {
   await fetch(`${BASE}/api/health-data/crm/${id}/checked-in`, { method: "PATCH" });
 }
 
+// ── Actionables ───────────────────────────────────────────────────────
+
+export interface Actionable {
+  id:                number;
+  source:            string;          // "Gmail" | "Manual"
+  task_description:  string;
+  due_date:          string | null;   // ISO date "2026-04-10" or null
+  priority:          string;          // "High" | "Medium" | "Low"
+  status:            string;          // "Pending" | "Done"
+  original_email_id: string | null;
+  sender:            string | null;
+  subject:           string | null;
+  created_at:        string;
+}
+
+export async function fetchActionables(
+  status?: string,
+  source?: string,
+): Promise<Actionable[]> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (source) params.set("source", source);
+  const qs  = params.toString() ? `?${params}` : "";
+  const res = await fetch(`${BASE}/api/actionables${qs}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Actionables API error: ${res.status}`);
+  return res.json();
+}
+
+export async function markActionableDone(id: number): Promise<Actionable> {
+  const res = await fetch(`${BASE}/api/actionables/${id}`, {
+    method:  "PUT",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ status: "Done" }),
+  });
+  if (!res.ok) throw new Error(`Mark done error: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteActionable(id: number): Promise<void> {
+  await fetch(`${BASE}/api/actionables/${id}`, { method: "DELETE" });
+}
+
+// ── Wealth analytics ──────────────────────────────────────────────────
+
+export interface MonthData {
+  month:     string;
+  income:    number;
+  expenses:  number;
+  net_worth: number | null;
+  has_data:  boolean;
+}
+
+export interface TrendsResponse {
+  months:           MonthData[];
+  has_transactions: boolean;
+}
+
+export interface SavingsRateData {
+  current_month:      string;
+  current_income:     number;
+  current_expenses:   number;
+  current_savings:    number;
+  savings_rate_pct:   number;
+  trailing_6m_avg:    number;
+  has_data:           boolean;
+}
+
+export interface ForecastDataPoint {
+  year:  number;
+  label: string;
+  value: number;
+}
+
+export interface ForecastData {
+  current_net_worth:       number;
+  monthly_savings_assumed: number;
+  annual_return_pct:       number;
+  projection_years:        number;
+  data_points:             ForecastDataPoint[];
+}
+
+export async function fetchTrends(): Promise<TrendsResponse> {
+  const res = await fetch(`${BASE}/api/wealth/trends`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Trends API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchSavingsRate(): Promise<SavingsRateData> {
+  const res = await fetch(`${BASE}/api/wealth/savings-rate`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Savings rate API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchForecast(): Promise<ForecastData> {
+  const res = await fetch(`${BASE}/api/wealth/forecast`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Forecast API error: ${res.status}`);
+  return res.json();
+}
+
 // ── Mutations ─────────────────────────────────────────────────────────
 
 export async function createTodo(text: string): Promise<Todo> {

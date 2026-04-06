@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { TrendingUp, TrendingDown } from "lucide-react";
-import { fetchWealth, fetchXIRR, WealthData, XIRRData } from "@/lib/api";
+import { fetchWealth, fetchXIRR, fetchSavingsRate, WealthData, XIRRData, SavingsRateData } from "@/lib/api";
 
 function formatNetWorth(value: number): string {
   if (value >= 1_00_00_000) return `₹${(value / 1_00_00_000).toFixed(2)}Cr`;
@@ -37,8 +37,9 @@ const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: { name
 };
 
 export default function WealthCenter() {
-  const [wealth,       setWealth]       = useState<WealthData | null>(null);
-  const [xirr,         setXirr]         = useState<XIRRData  | null>(null);
+  const [wealth,       setWealth]       = useState<WealthData    | null>(null);
+  const [xirr,         setXirr]         = useState<XIRRData      | null>(null);
+  const [savings,      setSavings]      = useState<SavingsRateData | null>(null);
   const [displayValue, setDisplayValue] = useState(0);
   const [error,        setError]        = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -48,6 +49,7 @@ export default function WealthCenter() {
       .then((d) => { setWealth(d); setError(false); })
       .catch(() => setError(true));
     fetchXIRR().then(setXirr).catch(() => {});
+    fetchSavingsRate().then(setSavings).catch(() => {});
   };
 
   useEffect(() => {
@@ -226,7 +228,7 @@ export default function WealthCenter() {
       <div className="h-px shrink-0" style={{ background: "rgba(255,255,255,0.06)" }} />
 
       {/* ── XIRR / Gain metrics row ── */}
-      <div className="grid grid-cols-3 gap-2 mt-auto">
+      <div className={`grid gap-2 mt-auto ${savings?.has_data ? "grid-cols-4" : "grid-cols-3"}`}>
         {[
           {
             label: "Invested",
@@ -245,6 +247,13 @@ export default function WealthCenter() {
               : `${gainPct >= 0 ? "+" : ""}${gainPct.toFixed(1)}%`,
             color: isUp ? "#30d158" : "#ff453a",
           },
+          ...(savings?.has_data
+            ? [{
+                label: "Saved",
+                value: `${savings.savings_rate_pct.toFixed(0)}%`,
+                color: savings.savings_rate_pct >= 20 ? "#30d158" : savings.savings_rate_pct >= 10 ? "#ff9f0a" : "#ff453a",
+              }]
+            : []),
         ].map(({ label, value, color }) => (
           <div key={label} className="flex flex-col items-center gap-0.5 px-2 py-2 rounded-xl"
             style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>

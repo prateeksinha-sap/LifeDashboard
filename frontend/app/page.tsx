@@ -11,17 +11,19 @@
  * ──────────────────────────────────────────────────────
  */
 
-import BentoCard       from "@/components/BentoCard";
-import WealthCenter    from "@/components/WealthCenter";
-import Top5Priorities  from "@/components/Top5Priorities";
-import SmartInbox      from "@/components/SmartInbox";
-import ActionCenter    from "@/components/ActionCenter";
-import UpcomingBills   from "@/components/UpcomingBills";
-import BalancesPanel   from "@/components/BalancesPanel";
-import StocksPanel     from "@/components/StocksPanel";
-import HealthCenter    from "@/components/HealthCenter";
-import LifeBalanceCard from "@/components/LifeBalanceCard";
-import PersonalCRM     from "@/components/PersonalCRM";
+import BentoCard          from "@/components/BentoCard";
+import WealthCenter       from "@/components/WealthCenter";
+import Top5Priorities     from "@/components/Top5Priorities";
+import SmartInbox         from "@/components/SmartInbox";
+import ActionCenter       from "@/components/ActionCenter";
+import UpcomingBills      from "@/components/UpcomingBills";
+import BalancesPanel      from "@/components/BalancesPanel";
+import StocksPanel        from "@/components/StocksPanel";
+import HealthCenter       from "@/components/HealthCenter";
+import LifeBalanceCard    from "@/components/LifeBalanceCard";
+import PersonalCRM        from "@/components/PersonalCRM";
+import WealthTrendsChart  from "@/components/WealthTrendsChart";
+import WealthForecast     from "@/components/WealthForecast";
 
 export default function DashboardPage() {
   const today = new Date().toLocaleDateString("en-IN", {
@@ -119,7 +121,7 @@ export default function DashboardPage() {
           style={{
             display:             "grid",
             gridTemplateColumns: "1.45fr 1fr 1fr",
-            gridTemplateRows:    "1fr 1fr auto",
+            gridTemplateRows:    "1fr 1fr auto auto",
             gap:                 "14px",
             minHeight:           0,
           }}
@@ -160,6 +162,17 @@ export default function DashboardPage() {
 
           <BentoCard>
             <PersonalCRM />
+          </BentoCard>
+
+          {/* ── Row 4: financial analytics ── */}
+          {/* WealthTrendsChart spans 2 cols */}
+          <BentoCard style={{ gridColumn: "span 2", minHeight: 280 }}>
+            <WealthTrendsChart />
+          </BentoCard>
+
+          {/* WealthForecast in col 3 */}
+          <BentoCard style={{ minHeight: 280 }}>
+            <WealthForecast />
           </BentoCard>
         </main>
 

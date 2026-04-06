@@ -11,3 +11,7 @@ openpyxl
 pymupdf
 pdfplumber
 beautifulsoup4
+pandas
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
