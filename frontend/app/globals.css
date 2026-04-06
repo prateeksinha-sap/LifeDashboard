@@ -1,0 +1,74 @@
+/* ─────────────────────────────────────────────
+   Life Dashboard — Apple-grade Design System
+   Tailwind v4: @import 'tailwindcss'
+   ───────────────────────────────────────────── */
+
+@import 'tailwindcss';
+
+/* ── Design Tokens ─────────────────────────── */
+:root {
+  /* Base */
+  --bg-base: #000000;
+
+  /* Glassmorphism card */
+  --card-bg:           rgba(255, 255, 255, 0.042);
+  --card-bg-hover:     rgba(255, 255, 255, 0.072);
+  --card-border:       rgba(255, 255, 255, 0.08);
+  --card-border-hover: rgba(255, 255, 255, 0.18);
+
+  /* Apple dark-mode system colors */
+  --apple-blue:   #0a84ff;
+  --apple-purple: #bf5af2;
+  --apple-green:  #30d158;
+  --apple-orange: #ff9f0a;
+  --apple-red:    #ff453a;
+  --apple-yellow: #ffd60a;
+  --apple-teal:   #5ac8fa;
+  --apple-indigo: #5e5ce6;
+  --apple-pink:   #ff375f;
+
+  /* Aliases used by widget components */
+  --accent-purple: var(--apple-purple);
+  --accent-pink:   var(--apple-pink);
+  --accent-green:  var(--apple-green);
+  --accent-gold:   var(--apple-orange);
+  --accent-blue:   var(--apple-blue);
+
+  /* Text hierarchy (Apple HIG) */
+  --text-primary:    rgba(255, 255, 255, 0.92);
+  --text-secondary:  rgba(255, 255, 255, 0.50);
+  --text-tertiary:   rgba(255, 255, 255, 0.28);
+  --text-quaternary: rgba(255, 255, 255, 0.12);
+
+  /* Legacy aliases (backwards compat) */
+  --bg-card:     var(--card-bg);
+  --border-card: var(--card-border);
+  --font-syne:   var(--font-syne-var);
+  --font-dm-sans: var(--font-inter-var);
+}
+
+/* ── Base ───────────────────────────────────── */
+html, body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular numerals for financial figures */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}

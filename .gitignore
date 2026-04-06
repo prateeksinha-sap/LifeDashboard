@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Environment secrets — never commit
+backend/.env
+*.env
+
+# Database — local data, not for git
+backend/dashboard.db
+backend/cas_extracted.html
+
+# CAS / Zerodha files — personal financial data
+backend/cas.pdf
+backend/cas_inner.pdf
+*.pdf
+*.xlsx
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/.turbo/
+
+# Logs
+backend/uvicorn.log
+*.log
+
+# Claude Code local settings
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
