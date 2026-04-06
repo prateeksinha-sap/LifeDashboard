@@ -100,7 +100,7 @@ export default function WealthTrendsChart() {
     const form = new FormData();
     form.append("file",    file);
     form.append("account", "Bank Account");
-    form.append("no_llm",  "false");
+    form.append("no_llm",  "true");   // skip LLM for large files; categories default to Misc
 
     try {
       const res  = await fetch(`${BASE}/api/wealth/import-statement`, { method: "POST", body: form });

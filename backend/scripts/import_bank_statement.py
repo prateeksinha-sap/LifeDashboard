@@ -44,6 +44,40 @@ def _norm(s: str) -> str:
     return s.strip().lower().replace(" ", "").replace("_", "").replace("%", "")
 
 
+# Keywords that are highly likely to appear in a bank statement header row
+_HEADER_HINTS = {
+    "date", "trandate", "transactiondate", "valuedate",
+    "narration", "particulars", "description", "transactionremarks",
+    "dr", "cr", "debit", "credit", "amount", "withdrawalamount", "depositamount",
+    "chqno", "balance", "bal",
+}
+
+
+def _find_header_row(path: str) -> int:
+    """
+    Scan the file line-by-line to find the 0-based row index that contains the
+    actual column headers (some banks prepend account-info rows before the data).
+    Returns 0 if no metadata rows are detected.
+    """
+    encodings = ("utf-8-sig", "cp1252")
+    for enc in encodings:
+        try:
+            with open(path, encoding=enc, errors="replace") as fh:
+                for idx, raw_line in enumerate(fh):
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    # Normalise each comma-separated token and count header hits
+                    tokens = [_norm(t) for t in line.split(",")]
+                    hits = sum(1 for t in tokens if t in _HEADER_HINTS)
+                    if hits >= 2:          # at least 2 recognisable header words
+                        return idx
+            break
+        except Exception:
+            continue
+    return 0
+
+
 def _detect_columns(df: pd.DataFrame) -> dict:
     """
     Detect column roles from header names.
@@ -120,10 +154,13 @@ async def import_csv(
     create_tables()
 
     # ── Read CSV ──────────────────────────────────────────────────────
+    header_row = _find_header_row(csv_path)
+    print(f"  Header row detected at index: {header_row}")
+    read_kwargs = dict(skip_blank_lines=True, skiprows=header_row, on_bad_lines="skip")
     try:
-        df = pd.read_csv(csv_path, encoding="utf-8-sig", skip_blank_lines=True)
+        df = pd.read_csv(csv_path, encoding="utf-8-sig", **read_kwargs)
     except Exception:
-        df = pd.read_csv(csv_path, encoding="cp1252", skip_blank_lines=True)
+        df = pd.read_csv(csv_path, encoding="cp1252", **read_kwargs)
 
     # Drop fully empty rows
     df.dropna(how="all", inplace=True)
