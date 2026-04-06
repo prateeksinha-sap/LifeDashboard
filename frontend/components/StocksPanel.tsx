@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrendingUp, Upload, X, Trash2, RefreshCw, Check, Loader2 } from "lucide-react";
 
@@ -24,7 +25,9 @@ export default function StocksPanel() {
   const [uploading, setUploading] = useState(false);
   const [refreshing,setRefreshing]= useState(false);
   const [message,   setMessage]   = useState<{ text: string; ok: boolean } | null>(null);
+  const [mounted,   setMounted]   = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => setMounted(true), []);
 
   const load = () =>
     fetch(`${BASE}/api/wealth/stocks`)
@@ -69,7 +72,7 @@ export default function StocksPanel() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await fetch(`${BASE}/api/wealth/refresh-prices`, { method: "POST" });
+      await fetch(`${BASE}/api/wealth/refresh-nav`, { method: "POST" });
       await load();
       flash("Prices refreshed");
     } catch {
@@ -99,6 +102,7 @@ export default function StocksPanel() {
         Stocks
       </button>
 
+      {mounted && createPortal(
       <AnimatePresence>
         {open && (
           <>
@@ -106,8 +110,8 @@ export default function StocksPanel() {
             <motion.div
               key="bd"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40"
-              style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)" }}
+              className="fixed inset-0"
+              style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)", zIndex: 9998 }}
               onClick={() => setOpen(false)}
             />
 
@@ -118,8 +122,9 @@ export default function StocksPanel() {
               animate={{ opacity: 1, scale: 1,    y: 0 }}
               exit={{    opacity: 0, scale: 0.94, y: -16 }}
               transition={{ type: "spring", stiffness: 340, damping: 28 }}
-              className="fixed z-50 top-[72px] right-6 w-[420px] rounded-3xl p-6 flex flex-col gap-4"
+              className="fixed top-[72px] right-6 w-[420px] rounded-3xl p-6 flex flex-col gap-4"
               style={{
+                zIndex:         9999,
                 background:     "rgba(22,22,26,0.92)",
                 border:         "1px solid rgba(255,255,255,0.1)",
                 backdropFilter: "blur(40px) saturate(180%)",
@@ -281,7 +286,9 @@ export default function StocksPanel() {
             </motion.div>
           </>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+      )}
     </>
   );
 }

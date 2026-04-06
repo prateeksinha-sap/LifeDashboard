@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { SlidersHorizontal, X, Check, Loader2, AlertCircle } from "lucide-react";
 
@@ -19,6 +20,8 @@ export default function BalancesPanel() {
   const [values,  setValues]  = useState<Record<string, string>>({});
   const [status,  setStatus]  = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errMsg,  setErrMsg]  = useState("");
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // Load current values from backend whenever panel opens
   useEffect(() => {
@@ -105,14 +108,15 @@ export default function BalancesPanel() {
         Balances
       </button>
 
+      {mounted && createPortal(
       <AnimatePresence>
         {open && (
           <>
             <motion.div
               key="bd"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40"
-              style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)" }}
+              className="fixed inset-0"
+              style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)", zIndex: 9998 }}
               onClick={() => setOpen(false)}
             />
 
@@ -122,8 +126,9 @@ export default function BalancesPanel() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{    opacity: 0, scale: 0.94, y: -16 }}
               transition={{ type: "spring", stiffness: 340, damping: 28 }}
-              className="fixed z-50 top-[72px] right-6 w-[340px] rounded-3xl p-6 flex flex-col gap-5"
+              className="fixed top-[72px] right-6 w-[340px] rounded-3xl p-6 flex flex-col gap-5"
               style={{
+                zIndex:         9999,
                 background:     "rgba(22,22,26,0.96)",
                 border:         "1px solid rgba(255,255,255,0.1)",
                 backdropFilter: "blur(40px) saturate(180%)",
@@ -242,7 +247,9 @@ export default function BalancesPanel() {
             </motion.div>
           </>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+      )}
     </>
   );
 }

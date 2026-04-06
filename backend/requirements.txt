@@ -5,3 +5,9 @@ python-dotenv
 httpx
 yfinance
 casparser
+scipy
+numpy
+openpyxl
+pymupdf
+pdfplumber
+beautifulsoup4

@@ -11,6 +11,7 @@ POST /api/wealth/refresh-nav — refresh MF NAVs from mfapi.in
 import os
 import io
 import csv
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -21,11 +22,16 @@ from sqlalchemy.orm import Session
 from database.db import get_db
 from database.models import MFHolding, StockHolding, ManualAsset
 from services.mf_nav import search_scheme_code, refresh_nav_for_holding
-from services.stock_price import get_stock_price, get_gold_price_inr_per_gram
+from services.stock_price import get_stock_price, get_gold_price_inr_per_gram, get_multiple_prices
+
+# ── Simple in-memory price cache (5-minute TTL) ───────────────────────
+_price_cache: dict[str, float] = {}
+_price_cache_ts: float = 0.0
+_PRICE_TTL = 300  # seconds
 
 router = APIRouter(prefix="/api/wealth", tags=["wealth"])
 
-# ── Colour palette for slices (Apple system colours) ─────────────────
+# ── Colour palettes ───────────────────────────────────────────────────
 SLICE_COLORS = {
     "Mutual Funds": "#bf5af2",
     "Stocks":       "#0a84ff",
@@ -35,6 +41,25 @@ SLICE_COLORS = {
     "Cash / Bank":  "#ffd60a",
     "Gold":         "#ff9f0a",
 }
+
+ASSET_TYPE_COLORS = {
+    "Equity": "#0a84ff",
+    "Debt":   "#5ac8fa",
+    "Gold":   "#ff9f0a",
+    "Cash":   "#ffd60a",
+}
+
+# Keywords that mark a MF scheme as Debt (everything else → Equity)
+_DEBT_KEYWORDS = [
+    "ultra short", "short duration", "short term fund", "liquid",
+    "money market", "overnight", "low duration", "floater",
+    "floating rate", "debt", "bond", "gilt", "credit risk",
+    "arbitrage", "savings fund", "conservative",
+]
+
+def _classify_mf(scheme_name: str) -> str:
+    name = scheme_name.lower()
+    return "Debt" if any(kw in name for kw in _DEBT_KEYWORDS) else "Equity"
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────
@@ -73,19 +98,26 @@ def get_wealth(db: Session = Depends(get_db)):
     mf_holdings = db.query(MFHolding).all()
     mf_value = round(sum(h.value for h in mf_holdings), 2)
 
-    # 2. Stocks — refresh prices from yfinance
+    # 2. Stocks — batch-fetch prices from yfinance (cached for 5 min)
     stocks = db.query(StockHolding).all()
     stock_value = 0.0
-    for s in stocks:
-        price = get_stock_price(s.symbol)
-        if price:
-            s.current_price = price
-            s.updated_at = datetime.utcnow()
-            stock_value += price * s.quantity
-        elif s.current_price:
-            stock_value += s.current_price * s.quantity
     if stocks:
-        db.commit()
+        global _price_cache, _price_cache_ts
+        now = time.time()
+        if (now - _price_cache_ts) > _PRICE_TTL or not _price_cache:
+            symbols = [s.symbol for s in stocks]
+            _price_cache = {k: v for k, v in get_multiple_prices(symbols).items() if v}
+            _price_cache_ts = now
+            # Persist fresh prices to DB
+            for s in stocks:
+                price = _price_cache.get(s.symbol)
+                if price:
+                    s.current_price = price
+                    s.updated_at    = datetime.utcnow()
+            db.commit()
+        for s in stocks:
+            price = _price_cache.get(s.symbol) or s.current_price or 0.0
+            stock_value += price * s.quantity
     stock_value = round(stock_value, 2)
 
     # 3. Manual assets
@@ -120,12 +152,34 @@ def get_wealth(db: Session = Depends(get_db)):
                 "color":      SLICE_COLORS.get(label, "#888"),
             })
 
+    # ── Asset-type breakdown (Equity / Debt / Gold / Cash) ────────────
+    equity_mf = sum(h.value for h in mf_holdings if _classify_mf(h.scheme_name) == "Equity")
+    debt_mf   = sum(h.value for h in mf_holdings if _classify_mf(h.scheme_name) == "Debt")
+
+    asset_buckets = {
+        "Equity": round(equity_mf + stock_value,              2),
+        "Debt":   round(debt_mf + epf_value + ppf_value + nps_value, 2),
+        "Gold":   round(gold_value,                            2),
+        "Cash":   round(bank_value,                            2),
+    }
+    asset_type_slices = [
+        {
+            "label":      label,
+            "value":      value,
+            "percentage": round((value / total) * 100, 1) if total else 0,
+            "color":      ASSET_TYPE_COLORS[label],
+        }
+        for label, value in asset_buckets.items()
+        if value > 0
+    ]
+
     return {
-        "total_net_worth": total,
-        "slices":          slices,
-        "mf_count":        len(mf_holdings),
-        "stock_count":     len(stocks),
-        "last_updated":    datetime.utcnow().isoformat(),
+        "total_net_worth":   total,
+        "slices":            slices,
+        "asset_type_slices": asset_type_slices,
+        "mf_count":          len(mf_holdings),
+        "stock_count":       len(stocks),
+        "last_updated":      datetime.utcnow().isoformat(),
     }
 
 

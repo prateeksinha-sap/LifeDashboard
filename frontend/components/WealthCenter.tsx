@@ -1,12 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Doughnut } from "react-chartjs-2";
-import { Chart as ChartJS, ArcElement, Tooltip } from "chart.js";
-import { TrendingUp } from "lucide-react";
-import { fetchWealth, WealthData } from "@/lib/api";
-
-ChartJS.register(ArcElement, Tooltip);
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+import { TrendingUp, TrendingDown } from "lucide-react";
+import { fetchWealth, fetchXIRR, WealthData, XIRRData } from "@/lib/api";
 
 function formatNetWorth(value: number): string {
   if (value >= 1_00_00_000) return `₹${(value / 1_00_00_000).toFixed(2)}Cr`;
@@ -15,16 +12,42 @@ function formatNetWorth(value: number): string {
   return `₹${value.toFixed(0)}`;
 }
 
+function formatLakh(v: number) {
+  return `₹${(v / 1_00_000).toFixed(1)}L`;
+}
+
+// Custom tooltip for Recharts
+const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: { name: string; value: number; payload: { color: string } }[] }) => {
+  if (!active || !payload?.length) return null;
+  const d = payload[0];
+  return (
+    <div style={{
+      background:    "rgba(22,22,26,0.96)",
+      border:        "1px solid rgba(255,255,255,0.1)",
+      borderRadius:  12,
+      padding:       "8px 12px",
+      backdropFilter:"blur(20px)",
+    }}>
+      <p style={{ color: d.payload.color, fontSize: 12, fontWeight: 600, margin: 0 }}>{d.name}</p>
+      <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, margin: "2px 0 0" }}>
+        {d.value.toFixed(1)}%
+      </p>
+    </div>
+  );
+};
+
 export default function WealthCenter() {
-  const [data,         setData]        = useState<WealthData | null>(null);
+  const [wealth,       setWealth]       = useState<WealthData | null>(null);
+  const [xirr,         setXirr]         = useState<XIRRData  | null>(null);
   const [displayValue, setDisplayValue] = useState(0);
   const [error,        setError]        = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadWealth = () => {
     fetchWealth()
-      .then((d) => { setData(d); setError(false); })
+      .then((d) => { setWealth(d); setError(false); })
       .catch(() => setError(true));
+    fetchXIRR().then(setXirr).catch(() => {});
   };
 
   useEffect(() => {
@@ -33,14 +56,13 @@ export default function WealthCenter() {
     return () => window.removeEventListener("wealth-updated", loadWealth);
   }, []);
 
-  // Count-up once data arrives
+  // Count-up animation
   useEffect(() => {
-    if (!data) return;
-    const target = data.total_net_worth;
+    if (!wealth) return;
+    const target = wealth.total_net_worth;
     const steps  = 72;
     const inc    = target / steps;
     let cur      = 0;
-
     timerRef.current = setInterval(() => {
       cur += inc;
       if (cur >= target) {
@@ -50,144 +72,189 @@ export default function WealthCenter() {
         setDisplayValue(Math.round(cur));
       }
     }, 1600 / steps);
-
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [data]);
+  }, [wealth?.total_net_worth]);
 
-  if (error) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center gap-2">
-        <p className="text-[13px]" style={{ color: "rgba(255,255,255,0.35)" }}>
-          Backend offline
-        </p>
-        <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>
-          Run: uvicorn main:app --reload
-        </p>
-      </div>
-    );
-  }
+  if (error) return (
+    <div className="flex flex-col h-full items-center justify-center gap-2">
+      <p className="text-[13px]" style={{ color: "rgba(255,255,255,0.35)" }}>Backend offline</p>
+      <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>Run start.bat</p>
+    </div>
+  );
 
-  if (!data) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center">
-        <div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin"
-          style={{ borderColor: "rgba(191,90,242,0.4)", borderTopColor: "transparent" }} />
-      </div>
-    );
-  }
+  if (!wealth) return (
+    <div className="flex h-full items-center justify-center">
+      <div className="w-5 h-5 rounded-full border-2 animate-spin"
+        style={{ borderColor: "rgba(191,90,242,0.3)", borderTopColor: "#bf5af2" }} />
+    </div>
+  );
 
-  const chartData = {
-    labels: data.slices.map((s) => s.label),
-    datasets: [{
-      data:            data.slices.map((s) => s.percentage),
-      backgroundColor: data.slices.map((s) => s.color),
-      borderColor:     "transparent",
-      hoverOffset:     10,
-    }],
-  };
-
-  const chartOptions = {
-    cutout: "72%",
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: "rgba(28,28,30,0.95)",
-        borderColor:     "rgba(255,255,255,0.08)",
-        borderWidth:     1,
-        titleColor:      "rgba(255,255,255,0.9)",
-        bodyColor:       "rgba(255,255,255,0.55)",
-        padding:         10,
-        callbacks: {
-          label: (ctx: { label: string; parsed: number }) =>
-            `  ${ctx.label}  ${ctx.parsed.toFixed(1)}%`,
-        },
-      },
-    },
-    animation: { animateRotate: true, duration: 1000 },
-  };
-
-  const totalAssets = data.mf_count + data.stock_count + data.slices.length;
+  const gainPct   = xirr?.gain_pct ?? 0;
+  const gainAbs   = xirr?.absolute_gain ?? 0;
+  const isUp      = gainAbs >= 0;
+  // Detailed slices: MF / Stocks / EPF / PPF / NPS / Cash / Gold
+  const chartData = wealth.slices ?? [];
+  // High-level type allocation for the sub-label row
+  const typeSlices = wealth.asset_type_slices ?? [];
 
   return (
-    <div className="flex flex-col h-full gap-5">
+    <div className="flex flex-col h-full gap-4">
 
-      {/* ── Header ── */}
+      {/* ── Net Worth ── */}
       <div>
-        <p className="text-[11px] font-medium uppercase tracking-[0.12em] mb-2"
+        <p className="text-[11px] font-medium uppercase tracking-[0.12em] mb-1.5"
           style={{ color: "rgba(255,255,255,0.35)" }}>
           Total Net Worth
         </p>
-
         <p className="tabular-nums"
           style={{
+            fontSize: "clamp(1.9rem,3.2vw,2.6rem)", fontWeight: 700,
+            letterSpacing: "-0.03em", color: "rgba(255,255,255,0.95)", lineHeight: 1.1,
             fontFamily: "-apple-system, 'SF Pro Display', var(--font-inter-var), sans-serif",
-            fontSize:   "clamp(2rem, 3.5vw, 2.75rem)",
-            fontWeight: 700,
-            letterSpacing: "-0.03em",
-            color: "rgba(255,255,255,0.95)",
-            lineHeight: 1.1,
           }}>
           {formatNetWorth(displayValue)}
         </p>
 
-        <div className="flex items-center gap-2 mt-2">
+        {/* Gain row */}
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
           <span className="flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-full"
             style={{
-              background: "rgba(48,209,88,0.12)",
-              color:      "#30d158",
-              border:     "1px solid rgba(48,209,88,0.2)",
+              background: isUp ? "rgba(48,209,88,0.12)"  : "rgba(255,69,58,0.12)",
+              color:      isUp ? "#30d158"                : "#ff453a",
+              border:     `1px solid ${isUp ? "rgba(48,209,88,0.22)" : "rgba(255,69,58,0.22)"}`,
             }}>
-            <TrendingUp size={11} strokeWidth={2.5} />
-            Live
+            {isUp ? <TrendingUp size={11} strokeWidth={2.5} /> : <TrendingDown size={11} strokeWidth={2.5} />}
+            {gainPct >= 0 ? "+" : ""}{gainPct.toFixed(1)}%
           </span>
           <span className="text-[12px]" style={{ color: "rgba(255,255,255,0.28)" }}>
-            {data.mf_count} MF · {data.stock_count} stocks · {data.slices.length} categories
+            {isUp ? "+" : ""}{formatLakh(gainAbs)} unrealised
           </span>
         </div>
       </div>
 
-      <div className="h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
+      <div className="h-px shrink-0" style={{ background: "rgba(255,255,255,0.06)" }} />
 
-      {/* ── Donut chart ── */}
-      <div className="relative flex justify-center items-center shrink-0" style={{ height: 196 }}>
-        <Doughnut data={chartData} options={chartOptions} />
+      {/* ── Donut chart — Portfolio Breakdown ── */}
+      <div>
+        <p className="text-[10px] font-medium uppercase tracking-[0.1em] mb-2"
+          style={{ color: "rgba(255,255,255,0.25)" }}>
+          Portfolio Breakdown
+        </p>
+        <div className="relative" style={{ height: 160 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={chartData}
+                dataKey="percentage"
+                nameKey="label"
+                cx="50%"
+                cy="50%"
+                innerRadius="52%"
+                outerRadius="78%"
+                paddingAngle={2}
+                startAngle={90}
+                endAngle={-270}
+                strokeWidth={0}
+              >
+                {chartData.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
 
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none gap-0.5">
-          <span className="text-[11px] font-medium uppercase tracking-widest"
-            style={{ color: "rgba(255,255,255,0.28)" }}>
-            Portfolio
-          </span>
-          <span className="text-xl font-bold tabular-nums"
-            style={{
-              color:      "rgba(255,255,255,0.9)",
-              fontFamily: "-apple-system, var(--font-inter-var), sans-serif",
-              letterSpacing: "-0.02em",
-            }}>
-            {data.slices.length} assets
-          </span>
+          {/* Centre label */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="text-[10px] font-medium uppercase tracking-widest"
+              style={{ color: "rgba(255,255,255,0.28)" }}>
+              Portfolio
+            </span>
+            <span className="text-[18px] font-bold tabular-nums"
+              style={{ color: "rgba(255,255,255,0.9)", letterSpacing: "-0.02em" }}>
+              {wealth.mf_count + wealth.stock_count}
+            </span>
+            <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.28)" }}>
+              holdings
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* ── Legend ── */}
-      <ul className="grid grid-cols-2 gap-x-4 gap-y-3 mt-auto">
-        {data.slices.map((slice) => (
-          <li key={slice.label} className="flex items-center gap-2.5">
-            <span className="shrink-0 w-2 h-2 rounded-full"
-              style={{
-                background: slice.color,
-                boxShadow:  `0 0 6px ${slice.color}88`,
-              }} />
-            <span className="text-[13px] flex-1 truncate"
-              style={{ color: "rgba(255,255,255,0.55)" }}>
-              {slice.label}
-            </span>
-            <span className="text-[13px] font-semibold tabular-nums"
-              style={{ color: slice.color }}>
-              {slice.percentage.toFixed(1)}%
-            </span>
-          </li>
+      {/* ── Holdings legend (3-col grid) ── */}
+      <div className="grid grid-cols-3 gap-1.5">
+        {chartData.map((s) => (
+          <div key={s.label} className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl"
+            style={{ background: `${s.color}10`, border: `1px solid ${s.color}22` }}>
+            <span className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ background: s.color, boxShadow: `0 0 5px ${s.color}88` }} />
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-medium truncate leading-tight"
+                style={{ color: "rgba(255,255,255,0.5)" }}>{s.label}</p>
+              <p className="text-[11px] font-bold tabular-nums leading-tight"
+                style={{ color: s.color }}>{s.percentage.toFixed(0)}%</p>
+            </div>
+          </div>
         ))}
-      </ul>
+      </div>
+
+      {/* ── Asset-class allocation bar (Equity / Debt / Gold / Cash) ── */}
+      {typeSlices.length > 0 && (
+        <div>
+          <p className="text-[9.5px] font-medium uppercase tracking-[0.1em] mb-1.5"
+            style={{ color: "rgba(255,255,255,0.2)" }}>
+            Asset Class
+          </p>
+          {/* Stacked bar */}
+          <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
+            {typeSlices.map((t) => (
+              <div key={t.label} style={{ width: `${t.percentage}%`, background: t.color }} />
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
+            {typeSlices.map((t) => (
+              <span key={t.label} className="flex items-center gap-1 text-[10px]"
+                style={{ color: "rgba(255,255,255,0.4)" }}>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: t.color }} />
+                {t.label} <span style={{ color: t.color, fontWeight: 600 }}>{t.percentage.toFixed(0)}%</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="h-px shrink-0" style={{ background: "rgba(255,255,255,0.06)" }} />
+
+      {/* ── XIRR / Gain metrics row ── */}
+      <div className="grid grid-cols-3 gap-2 mt-auto">
+        {[
+          {
+            label: "Invested",
+            value: formatLakh(xirr?.total_invested ?? 0),
+            color: "rgba(255,255,255,0.5)",
+          },
+          {
+            label: "Current",
+            value: formatLakh(xirr?.current_value ?? wealth.total_net_worth),
+            color: "rgba(255,255,255,0.5)",
+          },
+          {
+            label: xirr?.xirr_pct != null ? "XIRR" : "Gain",
+            value: xirr?.xirr_pct != null
+              ? `${xirr.xirr_pct > 0 ? "+" : ""}${xirr.xirr_pct.toFixed(1)}%`
+              : `${gainPct >= 0 ? "+" : ""}${gainPct.toFixed(1)}%`,
+            color: isUp ? "#30d158" : "#ff453a",
+          },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="flex flex-col items-center gap-0.5 px-2 py-2 rounded-xl"
+            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <span className="text-[10px] uppercase tracking-wide"
+              style={{ color: "rgba(255,255,255,0.28)" }}>{label}</span>
+            <span className="text-[12px] font-bold tabular-nums" style={{ color }}>{value}</span>
+          </div>
+        ))}
+      </div>
+
     </div>
   );
 }

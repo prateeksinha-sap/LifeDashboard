@@ -4,18 +4,24 @@
  * Apple-grade layout:
  *   • Animated aurora gradient mesh background
  *   • Frosted-glass header bar
- *   • 3-column bento grid (WealthCard spans 2 rows)
+ *   • 3-column × 3-row bento grid
+ *       Row 1+2 : WealthCenter (spans 2 rows) | Top5Priorities | SmartInbox
+ *                                              | ActionCenter   | UpcomingBills
+ *       Row 3   : HealthCenter | LifeBalanceCard | PersonalCRM
  * ──────────────────────────────────────────────────────
  */
 
-import BentoCard      from "@/components/BentoCard";
-import WealthCenter   from "@/components/WealthCenter";
-import Top7Priorities from "@/components/Top7Priorities";
-import SmartInbox     from "@/components/SmartInbox";
-import ActionCenter   from "@/components/ActionCenter";
-import UpcomingBills  from "@/components/UpcomingBills";
-import BalancesPanel  from "@/components/BalancesPanel";
-import StocksPanel    from "@/components/StocksPanel";
+import BentoCard       from "@/components/BentoCard";
+import WealthCenter    from "@/components/WealthCenter";
+import Top5Priorities  from "@/components/Top5Priorities";
+import SmartInbox      from "@/components/SmartInbox";
+import ActionCenter    from "@/components/ActionCenter";
+import UpcomingBills   from "@/components/UpcomingBills";
+import BalancesPanel   from "@/components/BalancesPanel";
+import StocksPanel     from "@/components/StocksPanel";
+import HealthCenter    from "@/components/HealthCenter";
+import LifeBalanceCard from "@/components/LifeBalanceCard";
+import PersonalCRM     from "@/components/PersonalCRM";
 
 export default function DashboardPage() {
   const today = new Date().toLocaleDateString("en-IN", {
@@ -28,9 +34,7 @@ export default function DashboardPage() {
   return (
     <div className="relative min-h-screen overflow-hidden" style={{ background: "#000000" }}>
 
-      {/* ── Aurora mesh background ────────────────────
-          Three slow-drifting radial colour blobs that
-          give depth without distracting from content.    */}
+      {/* ── Aurora mesh background ──────────────────── */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0"
@@ -43,7 +47,7 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* ── Noise texture overlay for depth ── */}
+      {/* ── Noise texture overlay ── */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0 opacity-[0.025]"
@@ -55,22 +59,20 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* ── Main content (above aurora) ── */}
+      {/* ── Main content ── */}
       <div className="relative z-10 flex flex-col min-h-screen px-6 py-5 gap-5">
 
-        {/* ─── Frosted-glass header bar ──────────────── */}
+        {/* ─── Frosted-glass header ──────────────────── */}
         <header
           className="flex items-center justify-between px-5 py-3 rounded-2xl"
           style={{
-            background:      "rgba(255,255,255,0.04)",
-            border:          "1px solid rgba(255,255,255,0.07)",
-            backdropFilter:  "blur(40px) saturate(180%)",
-            WebkitBackdropFilter: "blur(40px) saturate(180%)",
+            background:          "rgba(255,255,255,0.04)",
+            border:              "1px solid rgba(255,255,255,0.07)",
+            backdropFilter:      "blur(40px) saturate(180%)",
+            WebkitBackdropFilter:"blur(40px) saturate(180%)",
           }}
         >
-          {/* Left: title */}
           <div className="flex items-center gap-3">
-            {/* Coloured dot — like macOS traffic lights repurposed */}
             <span
               className="w-2.5 h-2.5 rounded-full"
               style={{
@@ -89,9 +91,7 @@ export default function DashboardPage() {
             </h1>
           </div>
 
-          {/* Right: live indicator + date + balances button */}
           <div className="flex items-center gap-3">
-            {/* Pulsing "Live" chip */}
             <span
               className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full"
               style={{
@@ -100,17 +100,11 @@ export default function DashboardPage() {
                 border:     "1px solid rgba(48,209,88,0.25)",
               }}
             >
-              <span
-                className="w-1.5 h-1.5 rounded-full animate-pulse"
-                style={{ background: "#30d158" }}
-              />
+              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#30d158" }} />
               Live
             </span>
 
-            <span
-              className="text-[13px]"
-              style={{ color: "rgba(255,255,255,0.35)" }}
-            >
+            <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.35)" }}>
               {today}
             </span>
 
@@ -125,30 +119,47 @@ export default function DashboardPage() {
           style={{
             display:             "grid",
             gridTemplateColumns: "1.45fr 1fr 1fr",
-            gridTemplateRows:    "1fr 1fr",
+            gridTemplateRows:    "1fr 1fr auto",
             gap:                 "14px",
             minHeight:           0,
           }}
         >
-          {/* Wealth — spans 2 rows, has gradient-border glow */}
+          {/* Wealth — spans rows 1 + 2 */}
           <BentoCard glow style={{ gridRow: "span 2" }}>
             <WealthCenter />
           </BentoCard>
 
+          {/* Row 1, col 2 */}
           <BentoCard>
-            <Top7Priorities />
+            <Top5Priorities />
           </BentoCard>
 
+          {/* Row 1, col 3 */}
           <BentoCard>
             <SmartInbox />
           </BentoCard>
 
+          {/* Row 2, col 2 */}
           <BentoCard>
             <ActionCenter />
           </BentoCard>
 
+          {/* Row 2, col 3 */}
           <BentoCard>
             <UpcomingBills />
+          </BentoCard>
+
+          {/* ── Row 3: health trifecta ── */}
+          <BentoCard>
+            <HealthCenter />
+          </BentoCard>
+
+          <BentoCard>
+            <LifeBalanceCard />
+          </BentoCard>
+
+          <BentoCard>
+            <PersonalCRM />
           </BentoCard>
         </main>
 
