@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import { Upload, CheckCircle, AlertCircle, Loader } from "lucide-react";
 
-const BASE = "http://localhost:8000";
+const BASE = "http://localhost:8001";
 
 interface MonthData {
   month:     string;

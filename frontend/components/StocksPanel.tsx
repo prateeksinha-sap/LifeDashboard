@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrendingUp, Upload, X, Trash2, RefreshCw, Check, Loader2 } from "lucide-react";
 
-const BASE = "http://localhost:8000";
+const BASE = "http://localhost:8001";
 
 interface Stock {
   id:            number;

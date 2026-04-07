@@ -2,7 +2,7 @@
  * lib/api.ts — typed API client for Life Dashboard backend
  */
 
-const BASE = "http://localhost:8000";
+const BASE = "http://localhost:8001";
 
 // ── Wealth ─────────────────────────────────────────────────────────────
 
