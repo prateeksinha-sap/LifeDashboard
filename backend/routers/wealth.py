@@ -12,6 +12,7 @@ import os
 import io
 import csv
 import sys
+import math
 import time
 import tempfile
 from datetime import datetime, date
@@ -33,6 +34,16 @@ from services.stock_price import get_stock_price, get_gold_price_inr_per_gram, g
 _price_cache: dict[str, float] = {}
 _price_cache_ts: float = 0.0
 _PRICE_TTL = 300  # seconds
+
+def _safe(v) -> float:
+    """Return 0.0 for None, NaN, or Inf — keeps JSON serialization clean."""
+    if v is None:
+        return 0.0
+    try:
+        f = float(v)
+        return 0.0 if (math.isnan(f) or math.isinf(f)) else f
+    except (TypeError, ValueError):
+        return 0.0
 
 router = APIRouter(prefix="/api/wealth", tags=["wealth"])
 
@@ -111,7 +122,7 @@ def get_wealth(db: Session = Depends(get_db)):
         now = time.time()
         if (now - _price_cache_ts) > _PRICE_TTL or not _price_cache:
             symbols = [s.symbol for s in stocks]
-            _price_cache = {k: v for k, v in get_multiple_prices(symbols).items() if v}
+            _price_cache = {k: _safe(v) for k, v in get_multiple_prices(symbols).items() if _safe(v) > 0}
             _price_cache_ts = now
             # Persist fresh prices to DB
             for s in stocks:
@@ -121,7 +132,7 @@ def get_wealth(db: Session = Depends(get_db)):
                     s.updated_at    = datetime.utcnow()
             db.commit()
         for s in stocks:
-            price = _price_cache.get(s.symbol) or s.current_price or 0.0
+            price = _safe(_price_cache.get(s.symbol)) or _safe(s.current_price) or 0.0
             stock_value += price * s.quantity
     stock_value = round(stock_value, 2)
 
@@ -219,17 +230,18 @@ def list_stocks(db: Session = Depends(get_db)):
     holdings = db.query(StockHolding).all()
     result = []
     for s in holdings:
-        price = s.current_price or s.avg_price
+        price    = _safe(s.current_price) or _safe(s.avg_price)
+        avg      = _safe(s.avg_price)
         result.append({
             "id":            s.id,
             "symbol":        s.symbol,
             "company_name":  s.company_name,
             "quantity":      s.quantity,
-            "avg_price":     s.avg_price,
+            "avg_price":     avg,
             "current_price": price,
             "value":         round(price * s.quantity, 2),
-            "gain_loss":     round((price - s.avg_price) * s.quantity, 2),
-            "gain_pct":      round(((price - s.avg_price) / s.avg_price) * 100, 2) if s.avg_price else 0,
+            "gain_loss":     round((price - avg) * s.quantity, 2),
+            "gain_pct":      round(((price - avg) / avg) * 100, 2) if avg else 0,
         })
     return result
 
@@ -409,7 +421,7 @@ def _current_net_worth_simple(db: Session) -> float:
     manual   = {a.asset_type: a.value for a in db.query(ManualAsset).all()}
     mf_val   = sum(h.value for h in db.query(MFHolding).all())
     stk_val  = sum(
-        (s.current_price or s.avg_price) * s.quantity
+        (_safe(s.current_price) or _safe(s.avg_price)) * s.quantity
         for s in db.query(StockHolding).all()
     )
     gold_g   = manual.get("GOLD_GRAMS", 0)
@@ -549,7 +561,7 @@ def take_wealth_snapshot(db: Session = Depends(get_db)):
     manual   = {a.asset_type: a.value for a in db.query(ManualAsset).all()}
     mf_val   = sum(h.value for h in db.query(MFHolding).all())
     stk_val  = sum(
-        (s.current_price or s.avg_price) * s.quantity
+        (_safe(s.current_price) or _safe(s.avg_price)) * s.quantity
         for s in db.query(StockHolding).all()
     )
     gold_g   = manual.get("GOLD_GRAMS", 0)
