@@ -118,15 +118,15 @@ def upsert_bill(db, name, amount, due_date, recurring, recurrence_days):
 
 PRIORITIES = [
     # rank  text                                         quadrant
-    (1,  "Finalize S/4HANA migration strategy",         "Q1"),  # Urgent & Important
+    (1,  "Finalize Q2 project delivery",                "Q1"),  # Urgent & Important
     (2,  "Setup Agentic AI workflow",                   "Q2"),  # Important, Not Urgent
-    (3,  "Pay Axis Bank PPF contribution",              "Q1"),  # Urgent & Important
-    (4,  "Plan Child's 4th Birthday (16 Sept)",        "Q2"),  # Important, Not Urgent
+    (3,  "Pay PPF contribution",                        "Q1"),  # Urgent & Important
+    (4,  "Plan upcoming family event",                  "Q2"),  # Important, Not Urgent
     (5,  "Rebalance MF portfolio",                      "Q2"),  # Important, Not Urgent
     (6,  "Review Q2 financial plan",                    "Q2"),  # Important, Not Urgent
     (7,  "File advance tax if applicable",              "Q1"),  # Urgent & Important
     (8,  "Book annual health checkup",                  "Q2"),  # Important, Not Urgent
-    (9,  "Review Zerodha holdings P&L",                 "Q2"),  # Important, Not Urgent
+    (9,  "Review equity holdings P&L",                  "Q2"),  # Important, Not Urgent
     (10, "Family outing plan",                          "Q3"),  # Urgent, Not Important
 ]
 
@@ -137,22 +137,22 @@ PRIORITIES = [
 #  (date, category, subcategory, minutes, notes)
 
 LIFE_LOGS = [
-    (today, "Work",       "My Company - S/4HANA",    180, "Migration strategy workshop with client team"),
-    (today, "Work",       "My Company - Admin",        30, "Timesheets, email triage"),
-    (today, "Upskilling", "Agentic AI",         60, "LangGraph multi-agent tutorial"),
-    (today, "Leisure",    "Badminton",          60, "Morning doubles session at complex"),
-    (today, "Leisure",    "Guitar",             45, "Opeth — Blackwater Park covers"),
-    (today, "Family",     "Child",             90, "Evening playtime and bedtime story"),
+    (today, "Work",       "Work - Project A",  180, "Strategy workshop with client team"),
+    (today, "Work",       "Work - Admin",        30, "Timesheets, email triage"),
+    (today, "Upskilling", "Agentic AI",          60, "LangGraph multi-agent tutorial"),
+    (today, "Leisure",    "Badminton",           60, "Morning doubles session"),
+    (today, "Leisure",    "Music",               45, "Practice session"),
+    (today, "Family",     "Family time",         90, "Evening playtime and bedtime story"),
     # Yesterday for graph variety
-    (today - timedelta(days=1), "Work",       "My Company - Client Delivery", 240, "On-site at client"),
-    (today - timedelta(days=1), "Upskilling", "SAP BTP",               90,  "BTP CAP model workshop"),
-    (today - timedelta(days=1), "Health",     "Gym",                   50,  "Chest + shoulders"),
-    (today - timedelta(days=1), "Family",     "Child",                60,  "School pickup + homework"),
+    (today - timedelta(days=1), "Work",       "Work - Client Delivery", 240, "On-site at client"),
+    (today - timedelta(days=1), "Upskilling", "Tech learning",           90, "Workshop"),
+    (today - timedelta(days=1), "Health",     "Gym",                     50, "Chest + shoulders"),
+    (today - timedelta(days=1), "Family",     "Family time",             60, "School pickup + homework"),
     # Day before
-    (today - timedelta(days=2), "Work",       "My Company - S/4HANA",        210, "Sprint planning"),
-    (today - timedelta(days=2), "Leisure",    "Guitar",                45,  "Scale practice"),
-    (today - timedelta(days=2), "Upskilling", "RAG / AI",              75,  "Vector DB deep-dive"),
-    (today - timedelta(days=2), "Health",     "Meditation",            20,  "Morning mindfulness"),
+    (today - timedelta(days=2), "Work",       "Work - Project A",       210, "Sprint planning"),
+    (today - timedelta(days=2), "Leisure",    "Music",                   45, "Scale practice"),
+    (today - timedelta(days=2), "Upskilling", "RAG / AI",                75, "Vector DB deep-dive"),
+    (today - timedelta(days=2), "Health",     "Meditation",              20, "Morning mindfulness"),
 ]
 
 
@@ -165,37 +165,37 @@ CRM_CONTACTS = [
     (
         "Partner",
         "Family",
-        today - timedelta(days=1),    # yesterday — should NOT trigger alert
+        today - timedelta(days=1),
         7,
-        "Wife. Daily touchpoints fine; log only intentional quality conversations.",
+        "Daily touchpoints fine; log only intentional quality conversations.",
     ),
     (
         "College Friend 1",
         "Friend",
-        today - timedelta(days=38),   # 38 days ago > 30 day interval → triggers alert
+        today - timedelta(days=38),
         30,
-        "Close friend from college. Lives in Bangalore. Last spoke about his startup.",
+        "Close friend from college. Last spoke about their startup.",
     ),
     (
         "Friend 2",
         "Friend",
-        today - timedelta(days=35),   # 35 days ago > 30 day interval → triggers alert
+        today - timedelta(days=35),
         30,
-        "Friend from My Company. Switched to Amazon last year. Owe him a catch-up call.",
+        "Friend from work. Switched companies last year. Owe a catch-up call.",
     ),
     (
-        "Mum & Dad",
+        "Parents",
         "Family",
-        today - timedelta(days=8),    # 8 days ago > 7 day interval → triggers alert
+        today - timedelta(days=8),
         7,
         "Call every Sunday. Missed last weekend.",
     ),
     (
-        "Rohan",
+        "Colleague 1",
         "Colleague",
         today - timedelta(days=12),
         30,
-        "SAP BTP architect at My Company. Collaborating on Agentic AI PoC.",
+        "Tech architect. Collaborating on Agentic AI PoC.",
     ),
 ]
 
@@ -207,10 +207,10 @@ CRM_CONTACTS = [
 
 NEW_BILLS = [
     (
-        "School — Junior KG Fees",
+        "School Fees — Term 1",
         47500,
-        date(2026, 6, 10),   # Due June
-        False,               # One-time per term
+        date(2026, 6, 10),
+        False,
         None,
     ),
     (
