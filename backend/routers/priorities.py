@@ -16,8 +16,9 @@ router = APIRouter(prefix="/api/priorities", tags=["priorities"])
 
 
 class PriorityItem(BaseModel):
-    rank: int
-    text: str
+    rank:                int
+    text:                str
+    eisenhower_quadrant: str = "Q2"
 
 
 @router.get("")
@@ -27,9 +28,13 @@ def list_priorities(db: Session = Depends(get_db)):
 
 @router.put("")
 def replace_priorities(items: List[PriorityItem], db: Session = Depends(get_db)):
-    """Replace the full priority list (ranked 1–7)."""
+    """Replace the full priority list."""
     db.query(Priority).delete()
     for item in items:
-        db.add(Priority(rank=item.rank, text=item.text))
+        db.add(Priority(
+            rank=item.rank,
+            text=item.text,
+            eisenhower_quadrant=item.eisenhower_quadrant,
+        ))
     db.commit()
     return db.query(Priority).order_by(Priority.rank).all()

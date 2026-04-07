@@ -308,6 +308,35 @@ export async function deleteTodo(id: number): Promise<void> {
   await fetch(`${BASE}/api/todos/${id}`, { method: "DELETE" });
 }
 
+export async function updatePriorities(
+  items: { rank: number; text: string; eisenhower_quadrant: string }[]
+): Promise<Priority[]> {
+  const res = await fetch(`${BASE}/api/priorities`, {
+    method:  "PUT",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(items),
+  });
+  if (!res.ok) throw new Error(`Update priorities error: ${res.status}`);
+  return res.json();
+}
+
+export async function createBill(bill: {
+  name: string; amount: number; due_date: string;
+  is_recurring: boolean; recurrence_days: number | null;
+}): Promise<Bill> {
+  const res = await fetch(`${BASE}/api/bills`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(bill),
+  });
+  if (!res.ok) throw new Error(`Create bill error: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteBill(id: number): Promise<void> {
+  await fetch(`${BASE}/api/bills/${id}`, { method: "DELETE" });
+}
+
 export async function markBillPaid(id: number): Promise<Bill> {
   const res = await fetch(`${BASE}/api/bills/${id}`, {
     method: "PATCH",
