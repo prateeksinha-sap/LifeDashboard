@@ -510,7 +510,8 @@ async def stage_file(
         and classification.confidence >= 0.86
     )
     if should_import:
-        return {"status": "imported", "file": await import_ingestion_file(db, row.id)}
+        imported_file = await import_ingestion_file(db, row.id)
+        return {"status": imported_file.get("status", "error"), "file": imported_file}
     return {"status": "staged", "file": serialize_ingestion_file(row)}
 
 
