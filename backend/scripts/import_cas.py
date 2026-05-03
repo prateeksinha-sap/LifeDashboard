@@ -248,11 +248,8 @@ def import_cas(pdf_path: str, password: str, db):
         print("  Trying CDSL consolidated CAS parser...\n")
         return import_cdsl_cas(pdf_path, password, db)
 
-    # Clear existing holdings before fresh import
-    db.query(MFHolding).delete()
-
-    count = 0
     skipped = 0
+    holdings = []
 
     for folio in data.folios:
         for scheme in folio.schemes:
@@ -264,25 +261,39 @@ def import_cas(pdf_path: str, password: str, db):
             nav   = float(scheme.valuation.nav)   if scheme.valuation else 0.0
             value = float(scheme.valuation.value) if scheme.valuation else round(units * nav, 2)
 
-            holding = MFHolding(
-                folio       = folio.folio,
-                amc         = folio.amc,
-                scheme_name = scheme.scheme,
-                isin        = scheme.isin or None,
-                units       = units,
-                nav         = nav,
-                value       = value,
-                nav_date    = date.today(),
-            )
-            db.add(holding)
-            count += 1
+            holdings.append({
+                "folio": folio.folio,
+                "amc": folio.amc,
+                "scheme_name": scheme.scheme,
+                "isin": scheme.isin or None,
+                "units": units,
+                "nav": nav,
+                "value": value,
+            })
 
-            print(f"  + {folio.amc[:25]:<25}  {scheme.scheme[:40]:<40}  "
-                  f"{units:>10.3f} units  Rs{value:>12,.0f}")
+    if not holdings:
+        raise ValueError("Could not find active mutual fund holdings in the CAS PDF.")
+
+    # Clear existing holdings only after the incoming CAS has active holdings.
+    db.query(MFHolding).delete()
+    for item in holdings:
+        db.add(MFHolding(
+            folio       = item["folio"],
+            amc         = item["amc"],
+            scheme_name = item["scheme_name"],
+            isin        = item["isin"],
+            units       = item["units"],
+            nav         = item["nav"],
+            value       = item["value"],
+            nav_date    = date.today(),
+        ))
+
+        print(f"  + {item['amc'][:25]:<25}  {item['scheme_name'][:40]:<40}  "
+              f"{item['units']:>10.3f} units  Rs{item['value']:>12,.0f}")
 
     db.commit()
-    print(f"\n  Imported: {count} active holdings  |  Skipped: {skipped} zero-unit entries")
-    return count
+    print(f"\n  Imported: {len(holdings)} active holdings  |  Skipped: {skipped} zero-unit entries")
+    return len(holdings)
 
 
 def main():

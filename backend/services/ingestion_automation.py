@@ -158,6 +158,42 @@ def _text_has_any(text: str, terms: set[str] | tuple[str, ...]) -> bool:
     return any(term in lower for term in terms)
 
 
+def _has_exact_token(text: str, token: str) -> bool:
+    return re.search(rf"(?<![a-z0-9]){re.escape(token.lower())}(?![a-z0-9])", text.lower()) is not None
+
+
+def _cas_signals(text: str) -> tuple[bool, bool, bool]:
+    lower = text.lower()
+    provider_signal = any(_has_exact_token(lower, token) for token in ("cams", "kfin", "kfintech", "cdsl", "nsdl"))
+    phrase_signal = any(
+        phrase in lower
+        for phrase in (
+            "consolidated account statement",
+            "mutual fund statement",
+            "mutual funds statement",
+            "mf statement",
+        )
+    )
+    exact_cas = _has_exact_token(lower, "cas")
+    mf_context = phrase_signal or provider_signal or "mutual fund" in lower or _has_exact_token(lower, "folio")
+    return provider_signal or phrase_signal, exact_cas, mf_context
+
+
+def _cas_password_candidates(password: str) -> list[str]:
+    raw = str(password or "")
+    stripped = raw.strip().strip('"').strip("'")
+    compact = re.sub(r"[\s\\/-]+", "", stripped)
+    candidates = [raw, stripped, compact, stripped.upper(), stripped.lower(), compact.upper(), compact.lower()]
+    # Common CAS format is PAN + DDMMYYYY; PAN is normally uppercase.
+    if len(compact) > 10:
+        candidates.append(compact[:10].upper() + compact[10:])
+    result: list[str] = []
+    for candidate in candidates:
+        if candidate and candidate not in result:
+            result.append(candidate)
+    return result
+
+
 def classify_file(path: Path, context: dict[str, Any] | None = None) -> FileClassification:
     context = context or {}
     suffix = path.suffix.lower()
@@ -182,13 +218,21 @@ def classify_file(path: Path, context: dict[str, Any] | None = None) -> FileClas
             "Looks like a credit-card, loan, or EMI statement. It is staged for review so it does not pollute bank cashflow.",
         )
 
-    if is_pdf and _text_has_any(combined, {"cas", "cams", "kfin", "kfintech", "cdsl", "consolidated account statement"}):
+    strong_cas_signal, exact_cas, mf_context = _cas_signals(combined)
+    if is_pdf and (strong_cas_signal or (exact_cas and mf_context)):
         has_password = bool(os.getenv("CAS_PASSWORD", "").strip())
         return FileClassification(
             "mutual_fund_cas",
-            0.96,
+            0.96 if strong_cas_signal else 0.86,
             has_password,
             "CAS PDF detected. Auto-import requires CAS_PASSWORD in backend .env." if not has_password else "CAS PDF detected.",
+        )
+    if is_pdf and exact_cas:
+        return FileClassification(
+            "mutual_fund_cas",
+            0.62,
+            False,
+            "Possible CAS PDF, but no mutual-fund provider/context was found. Staged for review.",
         )
 
     health_hits = {"steps", "stepcount", "sleep", "sleephours", "restinghr", "restingheartrate", "activemins"} & headers
@@ -430,7 +474,19 @@ async def import_ingestion_file(db: Session, file_id: int, detected_type: str | 
                 sys.path.insert(0, scripts_dir)
             from import_cas import import_cas
 
-            imported = import_cas(str(path), cas_password, db)
+            imported = None
+            last_error: Exception | None = None
+            for candidate in _cas_password_candidates(cas_password):
+                try:
+                    imported = import_cas(str(path), candidate, db)
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    text = str(exc).lower()
+                    if "password" not in text and "could not open cas pdf" not in text:
+                        raise
+            if imported is None:
+                raise last_error or ValueError("Could not import CAS PDF.")
             if imported > 0:
                 _mark_investments_refreshed(db)
             result = {"status": "ok", "imported": imported}
@@ -581,6 +637,7 @@ async def scan_gmail_attachments(
     resp = service.users().messages().list(userId="me", q=query, maxResults=max(1, min(max_messages, 300))).execute()
     messages = resp.get("messages", []) or []
     results: list[dict[str, Any]] = []
+    cas_candidates: list[tuple[int, int]] = []
     downloaded = 0
     skipped = 0
     errors = 0
@@ -596,6 +653,7 @@ async def scan_gmail_attachments(
             subject = _get_header(headers, "Subject") or "(No subject)"
             sender = _get_header(headers, "From") or "Unknown sender"
             message_date = _get_header(headers, "Date")
+            internal_date_ms = int(msg.get("internalDate") or 0)
             context_text = f"{subject} {sender}".lower()
 
             for part in _gmail_attachment_parts(payload):
@@ -628,18 +686,47 @@ async def scan_gmail_attachments(
                     "subject": subject,
                     "sender": sender,
                     "message_date": message_date,
+                    "internal_date_ms": internal_date_ms,
                 }
-                results.append(await stage_file(
+                preview = classify_file(local_path, metadata)
+                defer_cas_import = preview.detected_type == "mutual_fund_cas"
+                staged = await stage_file(
                     db,
                     local_path,
                     source="gmail",
                     source_key=f"{msg_id}:{attachment_id}",
                     metadata=metadata,
-                    auto_import=auto_import,
-                ))
+                    auto_import=auto_import and not defer_cas_import,
+                )
+                results.append(staged)
+                file_info = staged.get("file") or {}
+                if (
+                    auto_import
+                    and defer_cas_import
+                    and file_info.get("id")
+                    and file_info.get("status") != "imported"
+                    and float(file_info.get("confidence") or 0) >= 0.86
+                ):
+                    cas_candidates.append((internal_date_ms, int(file_info["id"])))
         except Exception as exc:
             errors += 1
             results.append({"status": "error", "message_id": msg_id, "error": str(exc)})
+
+    cas_import_attempted = False
+    cas_import_status = None
+    if auto_import and cas_candidates:
+        cas_import_attempted = True
+        selected_file_id = sorted(cas_candidates, reverse=True)[0][1]
+        imported_cas = await import_ingestion_file(db, selected_file_id)
+        cas_import_status = imported_cas.get("status")
+        replacement = {"status": imported_cas.get("status", "error"), "file": imported_cas, "selected_cas_import": True}
+        for idx, item in enumerate(results):
+            file_info = item.get("file") or {}
+            if file_info.get("id") == selected_file_id:
+                results[idx] = replacement
+                break
+        else:
+            results.append(replacement)
 
     return {
         "status": "ok",
@@ -648,6 +735,9 @@ async def scan_gmail_attachments(
         "attachments_downloaded": downloaded,
         "skipped": skipped,
         "errors": errors,
+        "cas_candidates": len(cas_candidates),
+        "cas_import_attempted": cas_import_attempted,
+        "cas_import_status": cas_import_status,
         "imported": sum(1 for item in results if item.get("status") == "imported"),
         "staged": sum(1 for item in results if item.get("status") == "staged"),
         "duplicates": sum(1 for item in results if item.get("status") == "duplicate"),

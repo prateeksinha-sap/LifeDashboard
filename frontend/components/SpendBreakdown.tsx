@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ReceiptText, TrendingDown } from "lucide-react";
+import { ReceiptText, Search } from "lucide-react";
 import { CoachOverview, fetchCoachOverview } from "@/lib/api";
 import EmptyState from "@/components/EmptyState";
 
@@ -41,7 +41,18 @@ export default function SpendBreakdown() {
 
   const totalSpend = data.metrics.true_expenses || categories.reduce((sum, row) => sum + row.total, 0);
   const top = categories[0];
-  const saveTarget = top ? Math.round(top.total * 0.1) : 0;
+  const transactionCount = data.cashflow.transaction_count ?? categories.reduce((sum, row) => sum + row.count, 0);
+  const monthsWithTransactions = Number(data.quality.months_with_transactions ?? 0);
+  const hasEnoughSignal = totalSpend >= 15000 && top.count >= 3 && transactionCount >= 8 && monthsWithTransactions >= 2;
+  const topShare = totalSpend ? Math.round((top.total / totalSpend) * 100) : 0;
+  const headlineLabel = hasEnoughSignal ? "Largest category" : "Early signal";
+  const guidance = hasEnoughSignal
+    ? topShare >= 35
+      ? `${top.category} is ${topShare}% of true spend. Review repeat merchants before cutting.`
+      : "Spend is fairly spread out. Look for repeats, not one-off trims."
+    : data.month === new Date().toISOString().slice(0, 7)
+      ? "Current month has too little spend data for advice yet."
+      : "Not enough rows to call this a leak.";
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -62,7 +73,7 @@ export default function SpendBreakdown() {
       <div className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)" }}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.34)" }}>Biggest leak</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.34)" }}>{headlineLabel}</p>
             <p className="mt-1 text-[15px] font-bold" style={{ color: "rgba(255,255,255,0.84)" }}>{top.category}</p>
           </div>
           <div className="text-right">
@@ -70,8 +81,8 @@ export default function SpendBreakdown() {
             <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.36)" }}>{top.count} rows</p>
           </div>
         </div>
-        <p className="mt-2 flex items-center gap-1.5 text-[11px]" style={{ color: "#30d158" }}>
-          <TrendingDown size={12} /> A 10% trim here frees roughly {money(saveTarget)}/mo.
+        <p className="mt-2 flex items-center gap-1.5 text-[11px]" style={{ color: hasEnoughSignal ? "#64d2ff" : "rgba(255,255,255,0.42)" }}>
+          <Search size={12} /> {guidance}
         </p>
       </div>
 

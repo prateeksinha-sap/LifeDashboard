@@ -908,6 +908,7 @@ export interface CoachOverview {
     unclear_transfers: number;
     bank_surplus: number;
     wealth_creation_rate_pct: number;
+    transaction_count?: number;
     categories: {
       category: string;
       total: number;
