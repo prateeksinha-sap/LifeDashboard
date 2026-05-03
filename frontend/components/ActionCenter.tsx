@@ -4,6 +4,7 @@ import { useState, useEffect, KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Plus, Mail, Zap } from "lucide-react";
 import { fetchTodos, createTodo, patchTodo, Todo, fetchActionables, markActionableDone, Actionable } from "@/lib/api";
+import EmptyState from "@/components/EmptyState";
 
 const PRIORITY_COLOR: Record<string, string> = {
   High:   "#ff453a",
@@ -17,7 +18,7 @@ export default function ActionCenter() {
   const [inputVal,    setInput]       = useState("");
   const [loading,     setLoading]     = useState(true);
 
-  useEffect(() => {
+  const load = () => {
     fetchTodos()
       .then(setTodos)
       .catch(() => {})
@@ -25,11 +26,24 @@ export default function ActionCenter() {
     fetchActionables("Pending")
       .then(setActionables)
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    load();
+    window.addEventListener("gmail-synced", load);
+    window.addEventListener("actionables-updated", load);
+    return () => {
+      window.removeEventListener("gmail-synced", load);
+      window.removeEventListener("actionables-updated", load);
+    };
   }, []);
 
   const doneActionable = async (id: number) => {
     setActionables((prev) => prev.filter((a) => a.id !== id));
-    try { await markActionableDone(id); } catch { /* silent */ }
+    try {
+      await markActionableDone(id);
+      window.dispatchEvent(new Event("actionables-updated"));
+    } catch { /* silent */ }
   };
 
   const toggle = async (id: number, currentDone: boolean) => {
@@ -144,6 +158,14 @@ export default function ActionCenter() {
       ) : (
         <>
           <ul className="flex flex-col gap-1">
+            {pending.length === 0 && completed.length === 0 && actionables.length === 0 && (
+              <li>
+                <EmptyState
+                  title="No reminders yet"
+                  detail="Type a reminder below, or use Gmail Sync above to collect email action items."
+                />
+              </li>
+            )}
             <AnimatePresence initial={false}>
               {pending.map((todo) => (
                 <motion.li

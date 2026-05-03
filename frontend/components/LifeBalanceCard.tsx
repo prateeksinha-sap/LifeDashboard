@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fetchLifeLog, LifeLogData } from "@/lib/api";
+import EmptyState from "@/components/EmptyState";
 
 const CATEGORY_META: Record<string, { color: string; icon: string }> = {
   Work:       { color: "#0a84ff", icon: "💼" },
@@ -37,6 +38,15 @@ export default function LifeBalanceCard() {
       <p className="text-[12px]" style={{ color: "rgba(255,255,255,0.3)" }}>No data</p>
     </div>
   );
+
+  if (data.categories.length === 0) {
+    return (
+      <EmptyState
+        title="No life log entries"
+        detail="Run the seed script or post life-log entries to see where your week is actually going."
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-full gap-3">

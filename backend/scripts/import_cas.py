@@ -90,6 +90,152 @@ def seed_defaults(db):
     db.commit()
 
 
+def _clean_text(value) -> str:
+    return (
+        str(value or "")
+        .replace("\xad", "")
+        .replace("\u00ad", "")
+        .replace("\n", " ")
+        .strip()
+    )
+
+
+def _parse_money(value) -> float:
+    text = _clean_text(value).replace(",", "").replace("`", "").replace("₹", "")
+    if text in ("", "-", "None"):
+        return 0.0
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def _metadata_from_cdsl_text(pdf_path: str, password: str) -> dict[tuple[str, str], dict]:
+    """Read folio metadata from the account-details section of a CDSL CAS."""
+    try:
+        import fitz
+    except ImportError:
+        return {}
+
+    doc = fitz.open(pdf_path)
+    if doc.needs_pass and not doc.authenticate(password):
+        raise ValueError("Could not open CAS PDF. Please check the password.")
+
+    metadata: dict[tuple[str, str], dict] = {}
+    current: dict[str, str] | None = None
+
+    def flush():
+        nonlocal current
+        if current and current.get("isin") and current.get("folio"):
+            key = (current["isin"], current["folio"].replace(" ", ""))
+            metadata[key] = dict(current)
+        current = None
+
+    for page in doc:
+        lines = [line.strip() for line in page.get_text("text").splitlines() if line.strip()]
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if line.startswith("AMC Name :"):
+                flush()
+                current = {"amc": line.split(":", 1)[1].strip()}
+            elif current is not None and line.startswith("Scheme Name :"):
+                parts = [line.split(":", 1)[1].strip()]
+                j = i + 1
+                while j < len(lines) and not lines[j].startswith("Scheme Code :"):
+                    parts.append(lines[j])
+                    j += 1
+                current["scheme_name"] = " ".join(parts).strip()
+                i = j - 1
+            elif current is not None and line.startswith("Folio No :"):
+                current["folio"] = line.split(":", 1)[1].strip()
+            elif current is not None and line.startswith("ISIN :"):
+                current["isin"] = line.split(":", 1)[1].strip()
+            i += 1
+    flush()
+    return metadata
+
+
+def import_cdsl_cas(pdf_path: str, password: str, db):
+    """Fallback parser for CDSL consolidated securities CAS PDFs."""
+    try:
+        import pdfplumber
+    except ImportError as exc:
+        raise ValueError(f"CDSL CAS import requires pdfplumber: {exc}")
+
+    metadata = _metadata_from_cdsl_text(pdf_path, password)
+    holdings = []
+
+    with pdfplumber.open(pdf_path, password=password) as pdf:
+        for page in pdf.pages:
+            for table in page.extract_tables() or []:
+                if not table or not table[0]:
+                    continue
+                header_text = " ".join(_clean_text(cell).lower() for cell in table[0])
+                if "scheme name" not in header_text or "valuation" not in header_text:
+                    continue
+
+                for row in table[2:]:
+                    if not row or not row[0]:
+                        continue
+                    scheme = _clean_text(row[0])
+                    if not scheme or scheme.lower().startswith("grand total"):
+                        continue
+
+                    isin = _clean_text(row[1]) if len(row) > 1 else ""
+                    folio = _clean_text(row[2]) if len(row) > 2 else ""
+                    units = _parse_money(row[4] if len(row) > 4 else "")
+                    nav = _parse_money(row[5] if len(row) > 5 else "")
+                    value = _parse_money(row[7] if len(row) > 7 else "")
+                    if units <= 0 or value <= 0:
+                        continue
+
+                    key = (isin, folio.replace(" ", ""))
+                    meta = metadata.get(key) or metadata.get((isin, folio)) or {}
+                    holdings.append({
+                        "folio": meta.get("folio") or folio.replace(" ", ""),
+                        "amc": meta.get("amc") or _infer_amc_from_scheme(scheme),
+                        "scheme_name": meta.get("scheme_name") or scheme,
+                        "isin": isin or None,
+                        "units": units,
+                        "nav": nav,
+                        "value": value,
+                    })
+
+    if not holdings:
+        raise ValueError("Could not find active mutual fund holdings in the CAS PDF.")
+
+    db.query(MFHolding).delete()
+    for item in holdings:
+        db.add(MFHolding(
+            folio=item["folio"],
+            amc=item["amc"],
+            scheme_name=item["scheme_name"],
+            isin=item["isin"],
+            units=item["units"],
+            nav=item["nav"],
+            value=item["value"],
+            nav_date=date.today(),
+        ))
+    db.commit()
+    print(f"\n  Imported CDSL CAS holdings: {len(holdings)} | Value: Rs{sum(h['value'] for h in holdings):,.2f}")
+    return len(holdings)
+
+
+def _infer_amc_from_scheme(scheme_name: str) -> str:
+    text = scheme_name.split(" - ", 1)[-1].strip()
+    known = [
+        "Axis", "HSBC", "Bandhan", "Mahindra Manulife", "Motilal Oswal",
+        "Nippon India", "Parag Parikh", "quant", "SBI", "SUNDARAM",
+        "Tata", "UTI", "WhiteOak Capital",
+    ]
+    lower = text.lower()
+    for name in known:
+        if name.lower() in lower:
+            return f"{name} Mutual Fund" if "mutual fund" not in name.lower() else name
+    return "Mutual Fund"
+
+
 def import_cas(pdf_path: str, password: str, db):
     """Parse the CAS PDF and upsert all MF holdings."""
     print(f"\n  Parsing: {pdf_path}")
@@ -98,9 +244,9 @@ def import_cas(pdf_path: str, password: str, db):
     try:
         data = casparser.read_cas_pdf(pdf_path, password)
     except Exception as e:
-        print(f"  FAILED to parse PDF: {e}")
-        print("  Check that the password is correct (PAN uppercase + DDMMYYYY)")
-        return 0
+        print(f"  casparser could not parse this CAS: {e}")
+        print("  Trying CDSL consolidated CAS parser...\n")
+        return import_cdsl_cas(pdf_path, password, db)
 
     # Clear existing holdings before fresh import
     db.query(MFHolding).delete()

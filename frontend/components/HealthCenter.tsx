@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import {
-  AreaChart, Area, ResponsiveContainer, Tooltip, YAxis,
+  AreaChart, Area, Tooltip, YAxis,
 } from "recharts";
 import { fetchHealthMetrics, fetchMedical, HealthMetricsData, MedicalData } from "@/lib/api";
+import EmptyState from "@/components/EmptyState";
+import SafeResponsiveContainer from "@/components/SafeResponsiveContainer";
 
 // Overall status pill styles
 const STATUS_STYLE: Record<string, { color: string; bg: string; border: string; label: string }> = {
@@ -85,6 +87,15 @@ export default function HealthCenter() {
     steps: r.steps ?? 0,
   }));
 
+  if (!medical && sparkData.length === 0) {
+    return (
+      <EmptyState
+        title="No health data yet"
+        detail="Seed sample data or import health metrics and medical summaries to make this card useful."
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col h-full gap-3">
 
@@ -133,10 +144,10 @@ export default function HealthCenter() {
         <div>
           <p className="text-[10px] font-medium uppercase tracking-[0.1em] mb-1.5"
             style={{ color: "rgba(255,255,255,0.25)" }}>
-            Daily Steps · 10 days
+            Daily Steps - 10 days
           </p>
           <div style={{ height: 52 }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <SafeResponsiveContainer>
               <AreaChart data={sparkData} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="stepsGrad" x1="0" y1="0" x2="0" y2="1">
@@ -156,7 +167,7 @@ export default function HealthCenter() {
                   activeDot={{ r: 3, fill: "#0a84ff", stroke: "none" }}
                 />
               </AreaChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           </div>
         </div>
       )}

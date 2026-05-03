@@ -4,8 +4,7 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { SlidersHorizontal, X, Check, Loader2, AlertCircle } from "lucide-react";
-
-const BASE = "http://localhost:8001";
+import { API_BASE } from "@/lib/config";
 
 const FIELDS = [
   { key: "EPF",        label: "EPF",        prefix: "₹", color: "#5ac8fa", hint: "EPFO portal balance" },
@@ -21,13 +20,16 @@ export default function BalancesPanel() {
   const [status,  setStatus]  = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errMsg,  setErrMsg]  = useState("");
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => setMounted(true));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
 
   // Load current values from backend whenever panel opens
   useEffect(() => {
     if (!open) return;
-    setStatus("idle");
-    fetch(`${BASE}/api/wealth/manual`)
+    const id = window.requestAnimationFrame(() => setStatus("idle"));
+    fetch(`${API_BASE}/api/wealth/manual`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -44,6 +46,7 @@ export default function BalancesPanel() {
         setErrMsg(`Could not load balances: ${e.message}`);
         setStatus("error");
       });
+    return () => window.cancelAnimationFrame(id);
   }, [open]);
 
   const handleChange = (key: string, raw: string) => {
@@ -58,7 +61,7 @@ export default function BalancesPanel() {
       const results = await Promise.allSettled(
         FIELDS.map((f) => {
           const v = parseFloat(values[f.key] || "0");
-          return fetch(`${BASE}/api/wealth/manual`, {
+          return fetch(`${API_BASE}/api/wealth/manual`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ asset_type: f.key, value: isNaN(v) ? 0 : v }),

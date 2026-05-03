@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Plus, X, Check } from "lucide-react";
 import { fetchBills, markBillPaid, createBill, deleteBill, Bill } from "@/lib/api";
+import EmptyState from "@/components/EmptyState";
 
 function getUrgency(days: number) {
   if (days <= 2) return { label: days === 0 ? "Today" : days === 1 ? "Tomorrow" : `${days}d`, color: "#ff453a", barColor: "#ff453a", barOpacity: 0.15 };
@@ -28,7 +29,11 @@ export default function UpcomingBills() {
       .catch(() => {})
       .finally(() => setLoading(false));
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    window.addEventListener("gmail-synced", load);
+    return () => window.removeEventListener("gmail-synced", load);
+  }, []);
 
   const handlePay = async (id: number) => {
     try {
@@ -89,6 +94,14 @@ export default function UpcomingBills() {
       </div>
 
       <ul className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0">
+        {bills.length === 0 && (
+          <li>
+            <EmptyState
+              title="No bills tracked"
+              detail="Use Gmail Sync or add payments here so recurring obligations do not disappear into memory."
+            />
+          </li>
+        )}
         <AnimatePresence initial={false}>
           {bills.map((bill) => {
             const u = getUrgency(bill.days_until_due);

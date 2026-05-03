@@ -12,6 +12,10 @@ build/
 # Environment secrets — never commit
 backend/.env
 *.env
+backend/credentials.json
+backend/token.json
+backend/gmail_sync_state.json
+backend/automation_state.json
 
 # Database — local data, not for git
 backend/dashboard.db
@@ -20,8 +24,11 @@ backend/cas_extracted.html
 # CAS / Zerodha files — personal financial data
 backend/cas.pdf
 backend/cas_inner.pdf
+backend/ingestion_files/
+backend/gmail_attachments/
 *.pdf
 *.xlsx
+*.csv
 
 # Node
 frontend/node_modules/
@@ -31,6 +38,10 @@ frontend/.turbo/
 # Logs
 backend/uvicorn.log
 *.log
+
+# Local screenshots/browser profiles from manual verification
+artifacts/
+REVIEW_FINDINGS.md
 
 # Claude Code local settings
 .claude/

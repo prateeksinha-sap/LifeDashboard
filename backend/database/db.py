@@ -2,12 +2,19 @@
 db.py — SQLAlchemy engine, session factory, and table bootstrap.
 """
 
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from typing import Generator
 from .models import Base
 
-DATABASE_URL = "sqlite:///./dashboard.db"
+load_dotenv()
+
+_DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "dashboard.db"
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{_DEFAULT_DB_PATH.as_posix()}")
 
 engine = create_engine(
     DATABASE_URL,

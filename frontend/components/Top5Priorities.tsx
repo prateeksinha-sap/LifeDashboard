@@ -4,6 +4,7 @@ import { useEffect, useState, KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X, Pencil, Check, Plus } from "lucide-react";
 import { fetchPriorities, updatePriorities, Priority } from "@/lib/api";
+import EmptyState from "@/components/EmptyState";
 
 const Q_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
   Q1: { label: "Urgent + Important",    color: "#ff453a", bg: "rgba(255,69,58,0.12)",   border: "rgba(255,69,58,0.28)"   },
@@ -121,6 +122,14 @@ export default function Top5Priorities() {
         </div>
       ) : (
         <ul className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0">
+          {priorities.length === 0 && !adding && (
+            <li>
+              <EmptyState
+                title="No priorities yet"
+                detail="Add the few things that would make this week successful."
+              />
+            </li>
+          )}
           <AnimatePresence initial={false}>
             {priorities.map((p, i) => {
               const rankColor = RANK_COLORS[i] ?? "#8e8e93";

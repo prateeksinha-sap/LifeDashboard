@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { fetchCRM, markCheckedIn, CRMContact } from "@/lib/api";
+import EmptyState from "@/components/EmptyState";
 
 function overdueLabel(c: CRMContact): string {
   if (c.overdue)          return `${c.days_overdue}d overdue`;
@@ -93,6 +94,14 @@ export default function PersonalCRM() {
         </div>
       ) : (
         <ul className="flex flex-col gap-2">
+          {contacts.length === 0 && (
+            <li>
+              <EmptyState
+                title="No people tracked"
+                detail="Add contacts through the database seed script or API to surface overdue check-ins."
+              />
+            </li>
+          )}
           <AnimatePresence initial={false}>
             {contacts.map((c) => {
               const color      = avatarColor(c.contact_name);

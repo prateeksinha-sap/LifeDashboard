@@ -21,6 +21,7 @@ All amounts are stored as positive floats; transaction_type marks direction.
 
 import argparse
 import asyncio
+import csv
 import sys
 import os
 from datetime import date, datetime
@@ -35,13 +36,14 @@ from sqlalchemy.orm import Session
 from database.db import SessionLocal, create_tables
 from database.models import Transaction
 from services.ai_service import categorize_transaction
+from services.transaction_categorizer import categorize_transaction_rule
 
 
 # ── Column-name normaliser ────────────────────────────────────────────
 
 def _norm(s: str) -> str:
     """Lowercase, strip spaces/underscores/% for fuzzy header matching."""
-    return s.strip().lower().replace(" ", "").replace("_", "").replace("%", "")
+    return s.strip().strip('"').lower().replace(" ", "").replace("_", "").replace("%", "")
 
 
 # Keywords that are highly likely to appear in a bank statement header row
@@ -81,7 +83,7 @@ def _find_header_row(path: str) -> int:
 def _detect_columns(df: pd.DataFrame) -> dict:
     """
     Detect column roles from header names.
-    Returns dict with keys: date, description, debit, credit, amount, txn_type.
+    Returns dict with keys: date, description, debit, credit, balance, amount, txn_type.
     Raises ValueError if required columns cannot be found.
     """
     headers = {_norm(c): c for c in df.columns}
@@ -97,6 +99,7 @@ def _detect_columns(df: pd.DataFrame) -> dict:
                     "remarks", "details", "txndescription")
     dr_col   = find("dr", "debitamount", "withdrawalamount", "debit")
     cr_col   = find("cr", "creditamount", "depositamount", "credit")
+    bal_col  = find("bal", "balance", "closingbalance", "availablebalance")
     amt_col  = find("amount", "txnamount")
     type_col = find("type", "txntype", "transactiontype", "crdr")
 
@@ -110,6 +113,7 @@ def _detect_columns(df: pd.DataFrame) -> dict:
         "desc":     desc_col,
         "debit":    dr_col,
         "credit":   cr_col,
+        "balance":  bal_col,
         "amount":   amt_col,
         "txn_type": type_col,
     }
@@ -119,14 +123,14 @@ def _parse_amount(val) -> float:
     """Parse a possibly comma-formatted or ₹-prefixed amount string to float."""
     if pd.isna(val) or val == "" or val is None:
         return 0.0
-    return float(str(val).replace(",", "").replace("₹", "").replace(" ", "").strip() or 0)
+    return float(str(val).replace(",", "").replace("₹", "").replace('"', "").replace(" ", "").strip() or 0)
 
 
 def _parse_date(val) -> date | None:
     """Try common Indian bank date formats."""
     if pd.isna(val) or not str(val).strip():
         return None
-    s = str(val).strip()
+    s = str(val).strip().strip('"')
     for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%Y-%m-%d",
                 "%d/%m/%y", "%d-%m-%y", "%d %b %y"):
         try:
@@ -162,6 +166,16 @@ async def import_csv(
     except Exception:
         df = pd.read_csv(csv_path, encoding="cp1252", **read_kwargs)
 
+    if len(df.columns) == 1 and "," in str(df.columns[0]):
+        read_kwargs["quoting"] = csv.QUOTE_NONE
+        read_kwargs["engine"] = "python"
+        try:
+            df = pd.read_csv(csv_path, encoding="utf-8-sig", **read_kwargs)
+        except Exception:
+            df = pd.read_csv(csv_path, encoding="cp1252", **read_kwargs)
+        df.columns = [str(c).strip().strip('"') for c in df.columns]
+        df = df.map(lambda v: v.strip().strip('"') if isinstance(v, str) else v)
+
     # Drop fully empty rows
     df.dropna(how="all", inplace=True)
     df.reset_index(drop=True, inplace=True)
@@ -176,16 +190,22 @@ async def import_csv(
 
     # ── Build transaction rows ────────────────────────────────────────
     rows = []
+    prev_balance: float | None = None
+    latest_balance: float | None = None
+    latest_balance_date: date | None = None
     for _, row in df.iterrows():
         txn_date = _parse_date(row[cols["date"]])
         if txn_date is None:
             continue
 
-        description = str(row[cols["desc"]]).strip()
+        description = str(row[cols["desc"]]).strip().strip('"')
         if not description or description.lower() in ("nan", ""):
             continue
 
-        # Determine amount and type
+        balance = _parse_amount(row.get(cols["balance"], 0)) if cols["balance"] else 0.0
+
+        # Determine amount and type. If a running balance is present, prefer it
+        # because some bank exports label DR/CR ambiguously.
         if cols["debit"] and cols["credit"]:
             debit  = _parse_amount(row.get(cols["debit"],  0))
             credit = _parse_amount(row.get(cols["credit"], 0))
@@ -209,30 +229,56 @@ async def import_csv(
         if amount <= 0:
             continue
 
+        if prev_balance is not None and balance > 0:
+            delta = round(balance - prev_balance, 2)
+            if abs(abs(delta) - amount) <= 0.05:
+                txn_type = "Credit" if delta > 0 else "Debit"
+        elif prev_balance is None:
+            desc_upper = description.upper()
+            if "DR" in desc_upper or "DEBIT" in desc_upper:
+                txn_type = "Debit"
+            elif "CR" in desc_upper or "CREDIT" in desc_upper:
+                txn_type = "Credit"
+
         rows.append({
             "date":        txn_date,
             "description": description,
             "amount":      amount,
             "txn_type":    txn_type,
         })
+        if balance > 0:
+            prev_balance = balance
+            if latest_balance_date is None or txn_date >= latest_balance_date:
+                latest_balance_date = txn_date
+                latest_balance = balance
 
     if not rows:
         print("  No valid transaction rows found.")
-        return {"imported": 0, "skipped": 0, "errors": 0}
+        return {"imported": 0, "skipped": 0, "errors": 0, "parsed_rows": 0, "earliest_date": None, "latest_date": None}
 
-    # ── LLM categorisation ────────────────────────────────────────────
+    dates = [r["date"] for r in rows]
+    earliest_date = min(dates)
+    latest_date = max(dates)
+    unique_months = sorted({d.strftime("%Y-%m") for d in dates})
+
+    # ── Categorisation ────────────────────────────────────────────────
     categories: list[str] = []
     if use_llm:
         print(f"  Categorising {len(rows)} transactions with Ollama…")
-        # Process in small batches with progress indicator
         for i, r in enumerate(rows):
-            cat = await categorize_transaction(r["description"])
+            rule_cat, confidence = categorize_transaction_rule(r["description"], r["txn_type"])
+            if confidence >= 0.80:
+                cat = rule_cat
+            else:
+                cat = await categorize_transaction(r["description"])
+                if not cat or cat in {"Misc", "Miscellaneous"}:
+                    cat = rule_cat
             categories.append(cat)
             if (i + 1) % 10 == 0 or (i + 1) == len(rows):
                 print(f"    {i + 1}/{len(rows)} categorised", end="\r")
         print()
     else:
-        categories = ["Misc"] * len(rows)
+        categories = [categorize_transaction_rule(r["description"], r["txn_type"])[0] for r in rows]
 
     # ── DB insert ─────────────────────────────────────────────────────
     imported = skipped = errors = 0
@@ -271,7 +317,18 @@ async def import_csv(
     finally:
         db.close()
 
-    return {"imported": imported, "skipped": skipped, "errors": errors}
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+        "parsed_rows": len(rows),
+        "earliest_date": earliest_date.isoformat(),
+        "latest_date": latest_date.isoformat(),
+        "date_span_days": (latest_date - earliest_date).days + 1,
+        "unique_months": unique_months,
+        "latest_statement_balance": latest_balance,
+        "latest_statement_balance_date": latest_balance_date.isoformat() if latest_balance_date else None,
+    }
 
 
 # ── CLI entry point ───────────────────────────────────────────────────
@@ -284,7 +341,7 @@ def main():
     parser.add_argument("--account",      default="Bank Account",
                         help='Account label, e.g. "HDFC Savings" (default: Bank Account)')
     parser.add_argument("--no-llm",       action="store_true",
-                        help="Skip Ollama categorisation (assigns Misc to all)")
+                        help="Skip Ollama categorisation (uses local rules)")
     parser.add_argument("--allow-dupes",  action="store_true",
                         help="Allow duplicate rows (skipped by default)")
     args = parser.parse_args()

@@ -10,9 +10,11 @@ POST /api/health-data/lifelog        — log a new activity
 """
 
 import json
+import csv
+import io
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -59,6 +61,73 @@ def get_health_metrics(days: int = 10, db: Session = Depends(get_db)):
         "avg_hr":     avg_hr,
         "days_logged": len(records),
     }
+
+
+@router.post("/metrics/import-csv")
+async def import_health_metrics_csv(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    content = await file.read()
+    text = content.decode("utf-8-sig", errors="replace")
+    rows = list(csv.DictReader(io.StringIO(text)))
+    if not rows:
+        raise HTTPException(400, "Empty CSV file")
+
+    def norm(value: str) -> str:
+        return value.strip().lower().replace(" ", "").replace("_", "")
+
+    headers = {norm(k): k for k in rows[0].keys()}
+
+    def col(*names: str) -> str | None:
+        for name in names:
+            if name in headers:
+                return headers[name]
+        return None
+
+    date_col = col("date", "day", "logdate")
+    if not date_col:
+        raise HTTPException(400, f"Could not find date column. Found: {list(rows[0].keys())}")
+
+    steps_col = col("steps", "stepcount")
+    sleep_col = col("sleephours", "sleep", "sleepduration")
+    hr_col = col("restinghr", "restingheartrate", "heartrate")
+    active_col = col("activemins", "activeminutes", "exercise")
+    calories_col = col("calories", "kcal")
+
+    def parse_date(raw: str) -> date | None:
+        raw = str(raw or "").strip()
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%m-%y", "%d/%m/%y"):
+            try:
+                from datetime import datetime
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    def parse_int(raw) -> int | None:
+        raw = str(raw or "").replace(",", "").strip()
+        return int(float(raw)) if raw else None
+
+    def parse_float(raw) -> float | None:
+        raw = str(raw or "").replace(",", "").strip()
+        return float(raw) if raw else None
+
+    imported = skipped = 0
+    for row in rows:
+        metric_date = parse_date(row.get(date_col, ""))
+        if not metric_date:
+            skipped += 1
+            continue
+        metric = db.query(HealthMetric).filter_by(date=metric_date).first()
+        if not metric:
+            metric = HealthMetric(date=metric_date)
+            db.add(metric)
+        if steps_col: metric.steps = parse_int(row.get(steps_col))
+        if sleep_col: metric.sleep_hours = parse_float(row.get(sleep_col))
+        if hr_col: metric.resting_hr = parse_int(row.get(hr_col))
+        if active_col: metric.active_mins = parse_int(row.get(active_col))
+        if calories_col: metric.calories = parse_int(row.get(calories_col))
+        imported += 1
+    db.commit()
+    return {"status": "ok", "imported": imported, "skipped": skipped}
 
 
 # ── Medical reports ───────────────────────────────────────────────

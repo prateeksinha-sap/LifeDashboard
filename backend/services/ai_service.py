@@ -26,12 +26,18 @@ import re
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+load_dotenv()
+
 OLLAMA_URL   = os.getenv("OLLAMA_URL",   "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-mini")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+AI_EXTRACTION_PROVIDER = os.getenv("AI_EXTRACTION_PROVIDER", os.getenv("ASSISTANT_PROVIDER", "auto")).strip().lower()
 TIMEOUT      = 120.0   # seconds — local LLMs can be slow on first token
 
 
@@ -88,6 +94,105 @@ async def _ollama_generate(prompt: str) -> str:
         return data.get("response", "")
 
 
+async def generate_text(prompt: str, *, max_tokens: int = 1400, temperature: float = 0.2, model: str | None = None) -> str:
+    """
+    Public text-generation helper for dashboard assistant style responses.
+    Keeps the rest of the app away from Ollama's wire format.
+    """
+    payload = {
+        "model": model or OLLAMA_MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": temperature,
+            "num_predict": max_tokens,
+        },
+    }
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        resp = await client.post(f"{OLLAMA_URL}/api/generate", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("response", "")
+
+
+async def generate_openai_text(
+    prompt: str,
+    *,
+    max_tokens: int = 900,
+    model: str | None = None,
+    reasoning_effort: str = "low",
+) -> str:
+    """Generate a concise assistant answer using OpenAI's Responses API."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set")
+
+    chosen_model = model or OPENAI_MODEL
+    payload: dict[str, Any] = {
+        "model": chosen_model,
+        "input": prompt,
+        "max_output_tokens": max_tokens,
+    }
+    if chosen_model.startswith("gpt-5"):
+        payload["reasoning"] = {"effort": reasoning_effort}
+
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        resp = await client.post(
+            "https://api.openai.com/v1/responses",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("output_text"):
+            return str(data["output_text"])
+
+        parts: list[str] = []
+        for item in data.get("output", []):
+            for content in item.get("content", []):
+                if content.get("type") in {"output_text", "text"} and content.get("text"):
+                    parts.append(str(content["text"]))
+        return "\n".join(parts).strip()
+
+
+async def generate_anthropic_text(
+    prompt: str,
+    *,
+    max_tokens: int = 900,
+    model: str | None = None,
+) -> str:
+    """Generate a concise assistant answer using Anthropic's Messages API."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY is not set")
+
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        resp = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model or ANTHROPIC_MODEL,
+                "max_tokens": max_tokens,
+                "temperature": 0.2,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return "\n".join(
+            str(item.get("text", ""))
+            for item in data.get("content", [])
+            if item.get("type") == "text"
+        ).strip()
+
+
 def _extract_json(text: str) -> Any:
     """
     Extract the first valid JSON object or array from a string.
@@ -113,6 +218,46 @@ def _extract_json(text: str) -> Any:
                 continue
 
     raise ValueError(f"No valid JSON found in LLM response:\n{text[:500]}")
+
+
+async def _generate_extraction_text(prompt: str, *, max_tokens: int = 1200) -> tuple[str, str, str | None]:
+    """Generate structured extraction text using the best configured provider."""
+    has_openai = bool(os.getenv("OPENAI_API_KEY"))
+    has_anthropic = bool(os.getenv("ANTHROPIC_API_KEY"))
+    provider = AI_EXTRACTION_PROVIDER
+    attempts: list[tuple[str, str | None]] = []
+
+    if provider in {"openai", "premium"} and has_openai:
+        attempts.append(("openai", OPENAI_MODEL))
+    elif provider in {"anthropic", "claude"} and has_anthropic:
+        attempts.append(("anthropic", ANTHROPIC_MODEL))
+    elif provider in {"ollama", "local"}:
+        attempts.append(("ollama", OLLAMA_MODEL))
+    else:
+        if has_openai:
+            attempts.append(("openai", OPENAI_MODEL))
+        if has_anthropic:
+            attempts.append(("anthropic", ANTHROPIC_MODEL))
+        attempts.append(("ollama", OLLAMA_MODEL))
+
+    if ("ollama", OLLAMA_MODEL) not in attempts:
+        attempts.append(("ollama", OLLAMA_MODEL))
+
+    last_error: Exception | None = None
+    for selected_provider, model in attempts:
+        try:
+            if selected_provider == "openai":
+                text = await generate_openai_text(prompt, max_tokens=max_tokens, model=OPENAI_MODEL, reasoning_effort="low")
+                return "openai", text, OPENAI_MODEL
+            if selected_provider == "anthropic":
+                text = await generate_anthropic_text(prompt, max_tokens=max_tokens, model=ANTHROPIC_MODEL)
+                return "anthropic", text, ANTHROPIC_MODEL
+            return "ollama", await _ollama_generate(prompt), model
+        except Exception as exc:
+            last_error = exc
+            logger.warning("%s extraction provider failed: %s", selected_provider, exc)
+            continue
+    raise last_error or RuntimeError("No AI extraction provider available")
 
 
 # ── Medical report parser ─────────────────────────────────────────
@@ -233,7 +378,7 @@ EMAIL:
 
 async def extract_email_tasks(email_body: str) -> EmailExtractResult:
     """
-    Use the local Ollama model to extract to-dos and bills from an email body.
+    Use the best configured model to extract to-dos and bills from an email body.
     Returns an EmailExtractResult with todos and bills lists.
     """
     if not email_body or not email_body.strip():
@@ -246,7 +391,7 @@ async def extract_email_tasks(email_body: str) -> EmailExtractResult:
     prompt = _EMAIL_PROMPT.format(body=email_body[:3000])
 
     try:
-        raw  = await _ollama_generate(prompt)
+        provider, raw, model = await _generate_extraction_text(prompt, max_tokens=1200)
         data = _extract_json(raw)
 
         todos = [
@@ -273,14 +418,14 @@ async def extract_email_tasks(email_body: str) -> EmailExtractResult:
             bills        = bills,
             summary      = str(data.get("summary", "")),
             is_ai_parsed = True,
-            raw_response = raw,
+            raw_response = f"{provider}:{model or 'default'}\n{raw}",
         )
 
     except httpx.ConnectError:
-        logger.warning("Ollama unreachable at %s", OLLAMA_URL)
+        logger.warning("AI extraction provider unreachable")
         return EmailExtractResult(
             todos=[], bills=[],
-            summary="AI extraction unavailable — Ollama not running.",
+            summary="AI extraction unavailable.",
             is_ai_parsed=False,
         )
     except Exception as e:
@@ -296,25 +441,31 @@ async def extract_email_tasks(email_body: str) -> EmailExtractResult:
 # ── Transaction categoriser ──────────────────────────────────────
 
 TRANSACTION_CATEGORIES = [
-    "Salary", "Utilities", "Groceries", "Dining", "Investments",
-    "Travel", "EMI", "Education", "Healthcare", "Misc",
+    "Salary", "Investment Income", "Refunds & Reversals", "Transfers In",
+    "Investments & Savings", "EMI & Loans", "Rent & Housing", "Household Help",
+    "Education & Child", "Healthcare", "Food & Delivery", "Groceries",
+    "Insurance", "Travel & Transport", "Utilities & Bills", "Fuel & Vehicle",
+    "Shopping", "Subscriptions", "Entertainment", "Alcohol", "Taxes",
+    "Cash Withdrawal", "Bank Charges", "Transfers Out", "Miscellaneous",
 ]
 
 _CATEGORIZE_PROMPT = """\
 You are a personal finance assistant. Categorise the following bank transaction description into exactly ONE of these categories:
-Salary, Utilities, Groceries, Dining, Investments, Travel, EMI, Education, Healthcare, Misc
+Salary, Investment Income, Refunds & Reversals, Transfers In, Investments & Savings, EMI & Loans, Rent & Housing, Household Help, Education & Child, Healthcare, Food & Delivery, Groceries, Insurance, Travel & Transport, Utilities & Bills, Fuel & Vehicle, Shopping, Subscriptions, Entertainment, Alcohol, Taxes, Cash Withdrawal, Bank Charges, Transfers Out, Miscellaneous
 
 Rules:
 - Salary: payroll credits, salary transfers
-- Utilities: electricity, water, gas, broadband, mobile recharge
+- Investment Income: interest, dividends, redemptions, capital payouts
+- Transfers In: money received from family, friends, self transfers
+- Investments & Savings: SIP, mutual fund, stock purchase, FD, RD, NPS, PPF, EPF
+- Utilities & Bills: electricity, water, gas, broadband, mobile recharge
 - Groceries: supermarkets, BigBasket, Blinkit, DMart, Zepto
-- Dining: restaurants, Zomato, Swiggy, cafes
-- Investments: SIP, mutual fund, stock purchase, FD, RD, NPS
-- Travel: flights, hotels, Ola, Uber, fuel, toll
-- EMI: loan EMI, credit card EMI, home loan
-- Education: school fees, courses, books
+- Food & Delivery: restaurants, Zomato, Swiggy, cafes
+- Travel & Transport: flights, hotels, Ola, Uber, fuel, toll
+- EMI & Loans: loan EMI, credit card EMI, home loan
+- Education & Child: school fees, courses, books
 - Healthcare: pharmacy, hospital, lab test, insurance premium
-- Misc: anything that doesn't fit the above
+- Miscellaneous: anything that doesn't fit the above
 
 Transaction description: "{description}"
 
@@ -324,27 +475,27 @@ Respond with ONLY the category name. No explanation.
 
 async def categorize_transaction(description: str) -> str:
     """
-    Use the local Ollama model to assign one of the standard categories
+    Use the best configured model to assign one of the standard categories
     to a bank transaction description.
-    Returns the category string (falls back to "Misc" on any error).
+    Returns the category string (falls back to "Miscellaneous" on any error).
     """
     if not description or not description.strip():
-        return "Misc"
+        return "Miscellaneous"
 
     prompt = _CATEGORIZE_PROMPT.format(description=description[:300])
 
     try:
-        raw = await _ollama_generate(prompt)
+        _, raw, _ = await _generate_extraction_text(prompt, max_tokens=80)
         # Parse: take the first word that matches a known category
         cleaned = raw.strip().strip('"').strip("'").split("\n")[0].strip()
         for cat in TRANSACTION_CATEGORIES:
             if cat.lower() in cleaned.lower():
                 return cat
-        return "Misc"
+        return "Miscellaneous"
     except httpx.ConnectError:
-        return "Misc"
+        return "Miscellaneous"
     except Exception:
-        return "Misc"
+        return "Miscellaneous"
 
 
 # ── Actionables extractor (Gmail) ────────────────────────────────
@@ -371,9 +522,9 @@ JSON array:"""
 
 async def extract_actionables_from_email(subject: str, body: str) -> list[dict]:
     """
-    Use the local Ollama model to extract structured action items from an email.
+    Use the best configured model to extract structured action items from an email.
     Returns a list of dicts with keys: task_description, due_date, priority.
-    Returns [] on any failure (Ollama offline, bad JSON, etc.).
+    Returns [] on any failure (provider offline, bad JSON, etc.).
     """
     if not body or not body.strip():
         return []
@@ -384,7 +535,7 @@ async def extract_actionables_from_email(subject: str, body: str) -> list[dict]:
     )
 
     try:
-        raw  = await _ollama_generate(prompt)
+        _, raw, _ = await _generate_extraction_text(prompt, max_tokens=1000)
         data = _extract_json(raw)
 
         if not isinstance(data, list):
@@ -405,7 +556,7 @@ async def extract_actionables_from_email(subject: str, body: str) -> list[dict]:
         return results
 
     except httpx.ConnectError:
-        logger.warning("Ollama unreachable — skipping actionable extraction for email")
+        logger.warning("AI provider unreachable; skipping actionable extraction for email")
         return []
     except Exception as e:
         logger.exception("extract_actionables_from_email failed: %s", e)

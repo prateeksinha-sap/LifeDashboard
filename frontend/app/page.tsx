@@ -1,85 +1,59 @@
-/**
- * page.tsx — Life Dashboard
- * ──────────────────────────────────────────────────────
- * Apple-grade layout:
- *   • Animated aurora gradient mesh background
- *   • Frosted-glass header bar
- *   • 3-column × 3-row bento grid
- *       Row 1+2 : WealthCenter (spans 2 rows) | Top5Priorities | SmartInbox
- *                                              | ActionCenter   | UpcomingBills
- *       Row 3   : HealthCenter | LifeBalanceCard | PersonalCRM
- * ──────────────────────────────────────────────────────
- */
-
-import BentoCard          from "@/components/BentoCard";
-import WealthCenter       from "@/components/WealthCenter";
-import Top5Priorities     from "@/components/Top5Priorities";
-import SmartInbox         from "@/components/SmartInbox";
-import ActionCenter       from "@/components/ActionCenter";
-import UpcomingBills      from "@/components/UpcomingBills";
-import BalancesPanel      from "@/components/BalancesPanel";
-import StocksPanel        from "@/components/StocksPanel";
-import HealthCenter       from "@/components/HealthCenter";
-import LifeBalanceCard    from "@/components/LifeBalanceCard";
-import PersonalCRM        from "@/components/PersonalCRM";
-import WealthTrendsChart  from "@/components/WealthTrendsChart";
-import WealthForecast     from "@/components/WealthForecast";
+import BentoCard from "@/components/BentoCard";
+import WealthCenter from "@/components/WealthCenter";
+import BalancesPanel from "@/components/BalancesPanel";
+import DataIngestionCenter from "@/components/DataIngestionCenter";
+import StocksPanel from "@/components/StocksPanel";
+import WealthTrendsChart from "@/components/WealthTrendsChart";
+import WealthForecast from "@/components/WealthForecast";
+import NewsImpact from "@/components/NewsImpact";
+import CashflowSummary from "@/components/CashflowSummary";
+import WealthCoach from "@/components/WealthCoach";
+import AssistantChat from "@/components/AssistantChat";
+import MonthReviewPanel from "@/components/MonthReviewPanel";
+import DataFreshness from "@/components/DataFreshness";
+import SpendBreakdown from "@/components/SpendBreakdown";
+import ActionHub from "@/components/ActionHub";
+import CFOPlanPanel from "@/components/CFOPlanPanel";
+import PortfolioAgentBrief from "@/components/PortfolioAgentBrief";
 
 export default function DashboardPage() {
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "long",
-    day:     "numeric",
-    month:   "long",
-    year:    "numeric",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
   });
 
   return (
     <div className="relative min-h-screen overflow-hidden" style={{ background: "#000000" }}>
-
-      {/* ── Aurora mesh background ──────────────────── */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0"
         style={{
           background: `
-            radial-gradient(ellipse 65% 55% at 10% 15%,  rgba(191, 90, 242, 0.18) 0%, transparent 60%),
-            radial-gradient(ellipse 55% 50% at 90% 80%,  rgba( 10,132, 255, 0.14) 0%, transparent 60%),
-            radial-gradient(ellipse 45% 60% at 55% 50%,  rgba( 48,209,  88, 0.07) 0%, transparent 65%)
+            radial-gradient(ellipse 52% 44% at 10% 10%, rgba(191,90,242,0.16) 0%, transparent 58%),
+            radial-gradient(ellipse 48% 42% at 90% 88%, rgba(10,132,255,0.12) 0%, transparent 60%),
+            radial-gradient(ellipse 40% 48% at 55% 50%, rgba(48,209,88,0.06) 0%, transparent 64%)
           `,
         }}
       />
 
-      {/* ── Noise texture overlay ── */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 opacity-[0.025]"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E\")",
-          backgroundRepeat: "repeat",
-          backgroundSize:   "128px 128px",
-        }}
-      />
-
-      {/* ── Main content ── */}
-      <div className="relative z-10 flex flex-col min-h-screen px-6 py-5 gap-5">
-
-        {/* ─── Frosted-glass header ──────────────────── */}
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1680px] flex-col gap-4 px-4 py-4 lg:px-5">
         <header
-          className="flex items-center justify-between px-5 py-3 rounded-2xl"
+          className="flex flex-col gap-3 rounded-lg px-4 py-3 md:flex-row md:items-center md:justify-between"
           style={{
-            background:          "rgba(255,255,255,0.04)",
-            border:              "1px solid rgba(255,255,255,0.07)",
-            backdropFilter:      "blur(40px) saturate(180%)",
-            WebkitBackdropFilter:"blur(40px) saturate(180%)",
+            background: "rgba(255,255,255,0.045)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            backdropFilter: "blur(34px) saturate(160%)",
+            WebkitBackdropFilter: "blur(34px) saturate(160%)",
           }}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex w-full items-center gap-3 md:w-auto">
             <span
-              className="w-2.5 h-2.5 rounded-full"
+              className="h-2.5 w-2.5 rounded-full"
               style={{
                 background: "linear-gradient(135deg, #bf5af2, #0a84ff)",
-                boxShadow:  "0 0 8px rgba(191,90,242,0.6)",
+                boxShadow: "0 0 8px rgba(191,90,242,0.6)",
               }}
             />
             <h1
@@ -93,90 +67,73 @@ export default function DashboardPage() {
             </h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
             <span
-              className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full"
+              className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
               style={{
                 background: "rgba(48,209,88,0.12)",
-                color:      "#30d158",
-                border:     "1px solid rgba(48,209,88,0.25)",
+                color: "#30d158",
+                border: "1px solid rgba(48,209,88,0.25)",
               }}
             >
-              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#30d158" }} />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: "#30d158" }} />
               Live
             </span>
-
-            <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+            <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.38)" }}>
               {today}
             </span>
-
             <StocksPanel />
             <BalancesPanel />
+            <MonthReviewPanel />
+            <DataIngestionCenter />
           </div>
         </header>
 
-        {/* ─── Bento grid ────────────────────────────── */}
-        <main
-          className="flex-1"
-          style={{
-            display:             "grid",
-            gridTemplateColumns: "1.45fr 1fr 1fr",
-            gridTemplateRows:    "1fr 1fr auto auto",
-            gap:                 "14px",
-            minHeight:           0,
-          }}
-        >
-          {/* Wealth — spans rows 1 + 2 */}
-          <BentoCard glow style={{ gridRow: "span 2" }}>
-            <WealthCenter />
-          </BentoCard>
+        <main className="flex flex-1 flex-col gap-4">
+          <section className="grid items-start gap-4 xl:grid-cols-[1.35fr_1fr_1fr_1.05fr]">
+            <BentoCard className="h-[320px]">
+              <WealthCoach />
+            </BentoCard>
+            <BentoCard className="h-[320px]">
+              <PortfolioAgentBrief />
+            </BentoCard>
+            <BentoCard className="h-[320px]">
+              <CashflowSummary />
+            </BentoCard>
+            <BentoCard className="h-[320px]">
+              <DataFreshness />
+            </BentoCard>
+          </section>
 
-          {/* Row 1, col 2 */}
-          <BentoCard>
-            <Top5Priorities />
-          </BentoCard>
+          <section className="grid items-start gap-4 xl:grid-cols-[1.35fr_1fr_1fr_1.6fr]">
+            <BentoCard glow className="h-[730px] xl:row-span-2">
+              <WealthCenter />
+            </BentoCard>
+            <BentoCard className="h-[330px] xl:col-span-2">
+              <WealthTrendsChart />
+            </BentoCard>
+            <BentoCard className="h-[330px]">
+              <WealthForecast />
+            </BentoCard>
+            <BentoCard className="h-[330px] xl:col-span-3">
+              <ActionHub />
+            </BentoCard>
+          </section>
 
-          {/* Row 1, col 3 */}
-          <BentoCard>
-            <SmartInbox />
-          </BentoCard>
-
-          {/* Row 2, col 2 */}
-          <BentoCard>
-            <ActionCenter />
-          </BentoCard>
-
-          {/* Row 2, col 3 */}
-          <BentoCard>
-            <UpcomingBills />
-          </BentoCard>
-
-          {/* ── Row 3: health trifecta ── */}
-          <BentoCard>
-            <HealthCenter />
-          </BentoCard>
-
-          <BentoCard>
-            <LifeBalanceCard />
-          </BentoCard>
-
-          <BentoCard>
-            <PersonalCRM />
-          </BentoCard>
-
-          {/* ── Row 4: financial analytics ── */}
-          {/* WealthTrendsChart spans 2 cols */}
-          <BentoCard style={{ gridColumn: "span 2", minHeight: 280 }}>
-            <WealthTrendsChart />
-          </BentoCard>
-
-          {/* WealthForecast in col 3 */}
-          <BentoCard style={{ minHeight: 280 }}>
-            <WealthForecast />
-          </BentoCard>
+          <section className="grid items-start gap-4 xl:grid-cols-[1fr_1fr_1fr]">
+            <BentoCard className="h-[360px]">
+              <CFOPlanPanel />
+            </BentoCard>
+            <BentoCard className="h-[360px]">
+              <SpendBreakdown />
+            </BentoCard>
+            <BentoCard className="h-[360px]">
+              <NewsImpact />
+            </BentoCard>
+          </section>
         </main>
-
       </div>
+      <AssistantChat />
     </div>
   );
 }

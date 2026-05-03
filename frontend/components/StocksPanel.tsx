@@ -4,8 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrendingUp, Upload, X, Trash2, RefreshCw, Check, Loader2 } from "lucide-react";
-
-const BASE = "http://localhost:8001";
+import { API_BASE } from "@/lib/config";
 
 interface Stock {
   id:            number;
@@ -27,10 +26,13 @@ export default function StocksPanel() {
   const [message,   setMessage]   = useState<{ text: string; ok: boolean } | null>(null);
   const [mounted,   setMounted]   = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => setMounted(true));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
 
   const load = () =>
-    fetch(`${BASE}/api/wealth/stocks`)
+    fetch(`${API_BASE}/api/wealth/stocks`)
       .then((r) => r.json())
       .then(setStocks)
       .catch(() => {});
@@ -49,10 +51,10 @@ export default function StocksPanel() {
     const form = new FormData();
     form.append("file", file);
     try {
-      const res  = await fetch(`${BASE}/api/wealth/stocks/import-csv`, { method: "POST", body: form });
+      const res  = await fetch(`${API_BASE}/api/wealth/stocks/import`, { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Upload failed");
-      flash(`Imported ${data.imported} stocks`);
+      flash(`Imported ${data.imported} stocks${data.sheet ? ` from ${data.sheet}` : ""}`);
       load();
       // Reload page so WealthCenter refreshes
       setTimeout(() => window.location.reload(), 1200);
@@ -65,14 +67,14 @@ export default function StocksPanel() {
   };
 
   const handleDelete = async (symbol: string) => {
-    await fetch(`${BASE}/api/wealth/stocks/${symbol}`, { method: "DELETE" });
+    await fetch(`${API_BASE}/api/wealth/stocks/${symbol}`, { method: "DELETE" });
     setStocks((prev) => prev.filter((s) => s.symbol !== symbol));
   };
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await fetch(`${BASE}/api/wealth/refresh-nav`, { method: "POST" });
+      await fetch(`${API_BASE}/api/wealth/stocks/refresh-prices`, { method: "POST" });
       await load();
       flash("Prices refreshed");
     } catch {
@@ -140,7 +142,7 @@ export default function StocksPanel() {
                     Zerodha Holdings
                   </p>
                   <p className="text-[12px] mt-0.5" style={{ color: "rgba(255,255,255,0.3)" }}>
-                    Import CSV from Console → Portfolio → Holdings
+                    Import Zerodha XLSX or CSV from Console holdings
                   </p>
                 </div>
                 <button onClick={() => setOpen(false)}
@@ -164,12 +166,12 @@ export default function StocksPanel() {
                 >
                   {uploading
                     ? <><Loader2 size={14} className="animate-spin" /> Importing…</>
-                    : <><Upload size={14} /> Import CSV</>}
+                    : <><Upload size={14} /> Import file</>}
                 </button>
                 <input
                   ref={fileRef}
                   type="file"
-                  accept=".csv,.txt"
+                  accept=".xlsx,.xlsm,.csv,.txt"
                   className="hidden"
                   onChange={handleFile}
                 />
@@ -215,7 +217,7 @@ export default function StocksPanel() {
                   <p className="text-[12px] mt-1" style={{ color: "rgba(255,255,255,0.2)" }}>
                     1. Open console.zerodha.com<br />
                     2. Portfolio → Holdings<br />
-                    3. Click the download icon → CSV<br />
+                    3. Download holdings as XLSX or CSV<br />
                     4. Import it above
                   </p>
                 </div>

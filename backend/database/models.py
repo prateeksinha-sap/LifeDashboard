@@ -46,6 +46,44 @@ class StockHolding(Base):
 
 
 # ── Manual assets (EPF, PPF, NPS, Bank, Gold) ────────────────────────
+class EquitySecurityClassification(Base):
+    __tablename__ = "equity_security_classifications"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    security_name = Column(String, nullable=False)
+    symbol        = Column(String, nullable=True)
+    isin          = Column(String, nullable=True)
+    category      = Column(String, nullable=False)
+    sector        = Column(String, nullable=True)
+    source        = Column(String, nullable=True)
+    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("security_name", "symbol", "isin", name="uq_equity_security_identity"),
+    )
+
+
+class FundPortfolioStock(Base):
+    __tablename__ = "fund_portfolio_stocks"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    scheme_name = Column(String, nullable=False)
+    amc         = Column(String, nullable=True)
+    stock_name  = Column(String, nullable=False)
+    symbol      = Column(String, nullable=True)
+    isin        = Column(String, nullable=True)
+    category    = Column(String, nullable=True)
+    sector      = Column(String, nullable=True)
+    weight_pct  = Column(Float, nullable=False)
+    as_of_date  = Column(Date, nullable=True)
+    source      = Column(String, nullable=True)
+    updated_at  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("scheme_name", "stock_name", "symbol", "isin", name="uq_fund_portfolio_stock_identity"),
+    )
+
+
 class ManualAsset(Base):
     __tablename__ = "manual_assets"
 
@@ -190,6 +228,19 @@ class Transaction(Base):
     created_at       = Column(DateTime, default=datetime.utcnow)
 
 
+class CategoryRule(Base):
+    __tablename__ = "category_rules"
+    __table_args__ = (UniqueConstraint("pattern", "transaction_type", name="uq_category_rule_pattern_type"),)
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    pattern          = Column(String, nullable=False)   # merchant/description substring, lower-cased
+    category         = Column(String, nullable=False)
+    transaction_type = Column(String, nullable=False, default="Debit")  # Debit | Credit
+    match_count      = Column(Integer, nullable=False, default=0)
+    created_at       = Column(DateTime, default=datetime.utcnow)
+    updated_at       = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # ── Monthly net-worth snapshots ────────────────────────────────────────
 # Populated by POST /api/wealth/snapshot (call at month-end or manually).
 # month_year format: "2026-04"  (YYYY-MM)
@@ -205,12 +256,94 @@ class HistoricalWealth(Base):
     updated_at      = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class AssetSnapshot(Base):
+    __tablename__ = "asset_snapshots"
+    __table_args__ = (UniqueConstraint("month_year", "asset_type", name="uq_asset_snapshot_month_type"),)
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    month_year = Column(String, nullable=False)
+    asset_type = Column(String, nullable=False)
+    value      = Column(Float, nullable=False, default=0)
+    source     = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Liability(Base):
+    __tablename__ = "liabilities"
+
+    id                 = Column(Integer, primary_key=True, autoincrement=True)
+    name               = Column(String, nullable=False)
+    liability_type     = Column(String, nullable=False, default="Loan")
+    outstanding_amount = Column(Float, nullable=False, default=0)
+    interest_rate_pct  = Column(Float, nullable=True)
+    emi_amount         = Column(Float, nullable=True)
+    due_day            = Column(Integer, nullable=True)
+    notes              = Column(Text, nullable=True)
+    updated_at         = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FinancialGoal(Base):
+    __tablename__ = "financial_goals"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    name           = Column(String, nullable=False)
+    target_amount  = Column(Float, nullable=False)
+    target_date    = Column(Date, nullable=True)
+    current_amount = Column(Float, nullable=False, default=0)
+    priority       = Column(String, nullable=False, default="Medium")
+    notes          = Column(Text, nullable=True)
+    created_at     = Column(DateTime, default=datetime.utcnow)
+    updated_at     = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MonthClose(Base):
+    __tablename__ = "month_close"
+
+    id                        = Column(Integer, primary_key=True, autoincrement=True)
+    month_year                = Column(String, nullable=False, unique=True)
+    bank_statement_imported   = Column(Boolean, default=False)
+    balances_updated          = Column(Boolean, default=False)
+    investments_refreshed     = Column(Boolean, default=False)
+    actionables_reviewed      = Column(Boolean, default=False)
+    snapshot_captured         = Column(Boolean, default=False)
+    status                    = Column(String, nullable=False, default="Open")
+    data_quality_score        = Column(Integer, nullable=False, default=0)
+    notes                     = Column(Text, nullable=True)
+    closed_at                 = Column(DateTime, nullable=True)
+    created_at                = Column(DateTime, default=datetime.utcnow)
+    updated_at                = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # ── Actionables (Gmail-extracted + manual tasks) ───────────────────────
 # Unified task list:
 #   • Gmail-extracted action items  (source="Gmail")
 #   • Manually added reminders      (source="Manual")
 # priority : "High" | "Medium" | "Low"
 # status   : "Pending" | "Completed"
+class IngestionFile(Base):
+    __tablename__ = "ingestion_files"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    source        = Column(String, nullable=False, default="drop_folder")
+    source_key    = Column(String, nullable=True)
+    filename      = Column(String, nullable=False)
+    stored_path   = Column(Text, nullable=False)
+    mime_type     = Column(String, nullable=True)
+    size_bytes    = Column(Integer, nullable=True)
+    sha256        = Column(String, nullable=False, unique=True)
+    detected_type = Column(String, nullable=False, default="unknown")
+    confidence    = Column(Float, nullable=False, default=0.0)
+    status        = Column(String, nullable=False, default="staged")
+    reason        = Column(Text, nullable=True)
+    error         = Column(Text, nullable=True)
+    metadata_json = Column(Text, nullable=True)
+    result_json   = Column(Text, nullable=True)
+    imported_at   = Column(DateTime, nullable=True)
+    created_at    = Column(DateTime, default=datetime.utcnow)
+    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Actionable(Base):
     __tablename__ = "actionables"
 
@@ -225,3 +358,81 @@ class Actionable(Base):
     subject           = Column(String,  nullable=True)   # email subject line
     created_at        = Column(DateTime, default=datetime.utcnow)
     updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PortfolioAgentRun(Base):
+    __tablename__ = "portfolio_agent_runs"
+
+    id                       = Column(Integer, primary_key=True, autoincrement=True)
+    run_id                   = Column(String, nullable=False, unique=True)
+    report_date              = Column(Date, nullable=True)
+    generated_at             = Column(DateTime, nullable=True)
+    imported_at              = Column(DateTime, default=datetime.utcnow)
+    source_path              = Column(Text, nullable=True)
+    source_mtime             = Column(DateTime, nullable=True)
+    report_json              = Column(Text, nullable=False)
+    cost_json                = Column(Text, nullable=True)
+    run_mode                 = Column(String, nullable=True)
+    data_mode                = Column(String, nullable=True)
+    delivery_mode            = Column(String, nullable=True)
+    email_status             = Column(String, nullable=True)
+    slack_status             = Column(String, nullable=True)
+    model                    = Column(String, nullable=True)
+    estimated_cost_usd       = Column(Float, nullable=True)
+    total_invested           = Column(Float, nullable=True)
+    total_current_value      = Column(Float, nullable=True)
+    total_pnl                = Column(Float, nullable=True)
+    total_pnl_pct            = Column(Float, nullable=True)
+    required_annual_return_pct = Column(Float, nullable=True)
+    estimated_portfolio_cagr = Column(Float, nullable=True)
+    target_portfolio_value   = Column(Float, nullable=True)
+    on_track_to_double       = Column(Boolean, nullable=True)
+    capital_growth_verdict   = Column(Text, nullable=True)
+    overall_sentiment        = Column(String, nullable=True)
+    top_action               = Column(Text, nullable=True)
+    created_at               = Column(DateTime, default=datetime.utcnow)
+    updated_at               = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PortfolioAgentRecommendation(Base):
+    __tablename__ = "portfolio_agent_recommendations"
+    __table_args__ = (
+        UniqueConstraint("run_id", "source_type", "fingerprint", name="uq_portfolio_agent_run_rec"),
+    )
+
+    id                       = Column(Integer, primary_key=True, autoincrement=True)
+    run_id                   = Column(String, nullable=False)
+    run_db_id                = Column(Integer, nullable=True)
+    source_type              = Column(String, nullable=False)  # action_plan | validated | rejected | futures
+    fingerprint              = Column(String, nullable=False)
+    priority                 = Column(Integer, nullable=True)
+    ticker                   = Column(String, nullable=True)
+    name                     = Column(String, nullable=True)
+    action                   = Column(Text, nullable=False)
+    timing                   = Column(String, nullable=True)
+    source_agent             = Column(String, nullable=True)
+    conviction               = Column(String, nullable=True)
+    estimated_amount_inr     = Column(Float, nullable=True)
+    suggested_allocation_pct = Column(Float, nullable=True)
+    target_price             = Column(Float, nullable=True)
+    rationale                = Column(Text, nullable=True)
+    raw_json                 = Column(Text, nullable=False)
+    created_at               = Column(DateTime, default=datetime.utcnow)
+    updated_at               = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PortfolioAgentDecision(Base):
+    __tablename__ = "portfolio_agent_decisions"
+
+    id                         = Column(Integer, primary_key=True, autoincrement=True)
+    fingerprint                = Column(String, nullable=False, unique=True)
+    status                     = Column(String, nullable=False, default="Review")
+    notes                      = Column(Text, nullable=True)
+    review_date                = Column(Date, nullable=True)
+    dismissed_until            = Column(Date, nullable=True)
+    actionable_id              = Column(Integer, nullable=True)
+    last_recommendation_id     = Column(Integer, nullable=True)
+    last_run_id                = Column(String, nullable=True)
+    decided_at                 = Column(DateTime, nullable=True)
+    created_at                 = Column(DateTime, default=datetime.utcnow)
+    updated_at                 = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

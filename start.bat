@@ -1,12 +1,28 @@
 @echo off
+setlocal
 title Life Dashboard
 
-:: ── Start Frontend ───────────────────────────────────
-start "Life Dashboard - Frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev"
+set "ROOT=%~dp0"
+set "FRONTEND=%ROOT%frontend"
+set "BACKEND=%ROOT%backend"
 
-:: ── Start Backend ────────────────────────────────────
-start "Life Dashboard - Backend" cmd /k "cd /d "%~dp0backend" && python -m uvicorn main:app --reload --port 8001"
+if not exist "%FRONTEND%\node_modules" (
+  echo Installing frontend dependencies...
+  pushd "%FRONTEND%"
+  call npm install
+  if errorlevel 1 (
+    echo Frontend dependency install failed.
+    pause
+    exit /b 1
+  )
+  popd
+)
 
-:: ── Wait 4 seconds then open browser ─────────────────
-timeout /t 4 /nobreak >nul
-start "" "http://localhost:3000"
+echo Starting backend on http://localhost:8003
+start "Life Dashboard - Backend" cmd /k "cd /d "%BACKEND%" && python -m uvicorn main:app --reload --port 8003"
+
+echo Starting frontend on http://localhost:3001
+start "Life Dashboard - Frontend" cmd /k "cd /d "%FRONTEND%" && set "NEXT_PUBLIC_API_BASE=http://127.0.0.1:8003" && npx next dev -p 3001"
+
+timeout /t 5 /nobreak >nul
+start "" "http://localhost:3001"
