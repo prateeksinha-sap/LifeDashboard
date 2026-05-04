@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from database.models import Actionable, Base, PortfolioAgentRecommendation, PortfolioAgentRun
-from services.portfolio_agent import DecisionNotAllowed, import_reports, record_decision
+from services.portfolio_agent import DecisionNotAllowed, get_brief, import_reports, record_decision
 
 
 def _report(generated_at: str, run_mode: str = "DRY_RUN", data_mode: str = "MOCK") -> dict:
@@ -116,6 +116,15 @@ def main() -> None:
         accepted = record_decision(db, live_action.id, "Accepted", notes="Proceed")
         assert accepted["decision"]["status"] == "Accepted"
         assert db.query(Actionable).filter_by(source="PortfolioAgent", status="Pending").count() == 1
+
+        _write_pair(report_dir, "20260504_103000", _report("2026-05-04T10:30:00"))
+        imported_newer_mock = import_reports(db, report_dir)
+        assert imported_newer_mock["imported_runs"] == 1
+        brief = get_brief(db)
+        assert brief["is_live"] is True
+        assert brief["latest_run"]["run_id"] == "20260504_081500"
+        assert brief["latest_imported_run"]["run_id"] == "20260504_103000"
+        assert brief["newer_non_live_count"] == 1
 
         cost_late_stem = "20260505_081500"
         (report_dir / f"{cost_late_stem}_report.json").write_text(

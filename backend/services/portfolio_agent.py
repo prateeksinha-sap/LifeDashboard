@@ -493,12 +493,27 @@ def serialize_run(run: PortfolioAgentRun, include_report: bool = False) -> dict[
     return payload
 
 
-def _latest_run(db: Session) -> PortfolioAgentRun | None:
-    return (
-        db.query(PortfolioAgentRun)
-        .order_by(PortfolioAgentRun.generated_at.desc(), PortfolioAgentRun.id.desc())
-        .first()
-    )
+def _latest_run(db: Session, *, live_only: bool = False) -> PortfolioAgentRun | None:
+    query = db.query(PortfolioAgentRun)
+    if live_only:
+        query = query.filter(PortfolioAgentRun.run_mode == "LIVE", PortfolioAgentRun.data_mode == "LIVE")
+    return query.order_by(PortfolioAgentRun.generated_at.desc(), PortfolioAgentRun.id.desc()).first()
+
+
+def _brief_run(db: Session) -> PortfolioAgentRun | None:
+    return _latest_run(db, live_only=True) or _latest_run(db)
+
+
+def _run_sort_key(run: PortfolioAgentRun) -> tuple[datetime, int]:
+    return (run.generated_at or datetime.min, run.id or 0)
+
+
+def _newer_non_live_count(db: Session, selected: PortfolioAgentRun | None) -> int:
+    if not selected:
+        return 0
+    selected_key = _run_sort_key(selected)
+    rows = db.query(PortfolioAgentRun).all()
+    return sum(1 for run in rows if not _run_is_live(run) and _run_sort_key(run) > selected_key)
 
 
 def _recommendations_for_run(db: Session, run_id: str, source_type: str | None = None) -> list[PortfolioAgentRecommendation]:
@@ -516,7 +531,8 @@ def _is_suppressed(decision: PortfolioAgentDecision | None) -> bool:
 
 
 def get_brief(db: Session) -> dict[str, Any]:
-    latest = _latest_run(db)
+    latest = _brief_run(db)
+    latest_imported = _latest_run(db)
     history = (
         db.query(PortfolioAgentRun)
         .order_by(PortfolioAgentRun.generated_at.desc(), PortfolioAgentRun.id.desc())
@@ -529,6 +545,8 @@ def get_brief(db: Session) -> dict[str, Any]:
             "report_dir": str(default_report_dir()),
             "report_dir_exists": default_report_dir().exists(),
             "latest_run": None,
+            "latest_imported_run": None,
+            "newer_non_live_count": 0,
             "action_plan": [],
             "validated_recommendations": [],
             "rejected_recommendations": [],
@@ -562,6 +580,8 @@ def get_brief(db: Session) -> dict[str, Any]:
         "report_dir_exists": default_report_dir().exists(),
         "is_live": _run_is_live(latest),
         "latest_run": serialize_run(latest, include_report=True),
+        "latest_imported_run": serialize_run(latest_imported) if latest_imported else None,
+        "newer_non_live_count": _newer_non_live_count(db, latest),
         "action_plan": [serialize_recommendation(db, rec) for rec in action_plan],
         "validated_recommendations": [serialize_recommendation(db, rec) for rec in validated],
         "rejected_recommendations": [serialize_recommendation(db, rec) for rec in rejected],
@@ -700,7 +720,7 @@ def record_decision(
 
 
 def assistant_context(db: Session) -> dict[str, Any] | None:
-    latest = _latest_run(db)
+    latest = _brief_run(db)
     if not latest:
         return None
     actions = _recommendations_for_run(db, latest.run_id, "action_plan")[:5]

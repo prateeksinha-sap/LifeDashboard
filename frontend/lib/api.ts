@@ -618,6 +618,8 @@ export interface PortfolioAgentBrief {
   report_dir_exists: boolean;
   is_live?: boolean;
   latest_run: PortfolioAgentRun | null;
+  latest_imported_run?: PortfolioAgentRun | null;
+  newer_non_live_count?: number;
   action_plan: PortfolioAgentRecommendation[];
   validated_recommendations: PortfolioAgentRecommendation[];
   rejected_recommendations: PortfolioAgentRecommendation[];
