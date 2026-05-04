@@ -2124,7 +2124,7 @@ def get_wealth_trends(range: str = "auto", db: Session = Depends(get_db)):
             "has_data":  income > 0 or expenses > 0,
             "is_current_month": is_current_month,
             "is_provisional": is_provisional,
-            "visible_in_trend": not is_provisional or range == "all",
+            "visible_in_trend": True,
         })
 
     has_visible_cashflow = any(r["has_data"] for r in result)
@@ -2143,8 +2143,8 @@ def get_wealth_trends(range: str = "auto", db: Session = Depends(get_db)):
         "is_showing_imported_period": range_label == "Imported period",
         "provisional_months": provisional_months,
         "provisional_month_note": (
-            f"{', '.join(provisional_months)} is hidden from the trend until salary/month-end because the current month is incomplete."
-            if provisional_months and range != "all" else None
+            f"{', '.join(provisional_months)} is shown as a provisional month until salary/month-end. Use it to track progress, not to judge income or savings."
+            if provisional_months else None
         ),
         "expense_modes": {
             "all": "Expenses include visible bank debits, including investments and savings transfers. Cash withdrawals are always hidden.",

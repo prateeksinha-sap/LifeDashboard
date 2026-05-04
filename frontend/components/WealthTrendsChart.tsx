@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Cell,
   Tooltip, Legend,
 } from "recharts";
 import {
@@ -289,8 +289,8 @@ export default function WealthTrendsChart() {
   );
 
   const noData = !data || (data.total_transaction_count ?? 0) === 0;
-  const trendMonths = (data?.months ?? []).filter((month) => month.visible_in_trend !== false);
-  const hiddenProvisionalMonths = (data?.months ?? []).filter((month) => month.has_data && month.visible_in_trend === false);
+  const trendMonths = data?.months ?? [];
+  const provisionalMonths = trendMonths.filter((month) => month.has_data && month.is_provisional);
   const visibleMonths = trendMonths.filter((m) => m.has_data).length;
   const uploadCoversTooLittle = Boolean(uploadResult && uploadResult.date_span_days > 0 && uploadResult.date_span_days < 60);
   const importedPeriod = data?.earliest_transaction_date && data.latest_transaction_date
@@ -418,7 +418,7 @@ export default function WealthTrendsChart() {
         </div>
       )}
 
-      {hiddenProvisionalMonths.length > 0 && data?.provisional_month_note && (
+      {provisionalMonths.length > 0 && data?.provisional_month_note && (
         <div className="rounded-xl px-3 py-2 text-[11px] leading-snug" style={{ background: "rgba(10,132,255,0.08)", border: "1px solid rgba(10,132,255,0.18)", color: "#64d2ff" }}>
           {data.provisional_month_note}
         </div>
@@ -471,7 +471,11 @@ export default function WealthTrendsChart() {
                 isAnimationActive={false}
                 cursor="pointer"
                 onClick={(entry) => openBreakdown(entry, "Credit")}
-              />
+              >
+                {chartMonths.map((month) => (
+                  <Cell key={`income-${month.month}`} fill="#30d158" fillOpacity={month.is_provisional ? 0.34 : 0.7} />
+                ))}
+              </Bar>
               <Bar
                 yAxisId="bars"
                 dataKey={expenseDataKey}
@@ -483,7 +487,11 @@ export default function WealthTrendsChart() {
                 isAnimationActive={false}
                 cursor="pointer"
                 onClick={(entry) => openBreakdown(entry, "Debit")}
-              />
+              >
+                {chartMonths.map((month) => (
+                  <Cell key={`expense-${month.month}`} fill="#ff453a" fillOpacity={month.is_provisional ? 0.32 : 0.65} />
+                ))}
+              </Bar>
               <Line
                 yAxisId="line"
                 type="monotone"
