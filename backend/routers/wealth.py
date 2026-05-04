@@ -2098,11 +2098,20 @@ def get_wealth_trends(range: str = "auto", db: Session = Depends(get_db)):
         range_label = "Imported period"
 
     result = []
-    current_month = date.today().strftime("%Y-%m")
+    today = date.today()
+    current_month = today.strftime("%Y-%m")
+    salary_baseline = _safe(os.getenv("USER_MONTHLY_SALARY_INR")) or 0.0
+    salary_signal_threshold = max(salary_baseline * 0.5, 50_000.0)
+    provisional_months = []
     for my in months:
         income, expenses = _month_income_expenses(db, my)
         _, expenses_excluding_investments = _month_income_expenses(db, my, exclude_investments=True)
         snapshot = db.query(HistoricalWealth).filter_by(month_year=my).first()
+        is_current_month = my == current_month
+        has_salary_signal = income >= salary_signal_threshold
+        is_provisional = bool(is_current_month and today.day < 25 and not has_salary_signal)
+        if is_provisional:
+            provisional_months.append(my)
         result.append({
             "month":     my,
             "income":    income,
@@ -2113,6 +2122,9 @@ def get_wealth_trends(range: str = "auto", db: Session = Depends(get_db)):
                 latest_nw if my == current_month else None
             ),
             "has_data":  income > 0 or expenses > 0,
+            "is_current_month": is_current_month,
+            "is_provisional": is_provisional,
+            "visible_in_trend": not is_provisional or range == "all",
         })
 
     has_visible_cashflow = any(r["has_data"] for r in result)
@@ -2129,6 +2141,11 @@ def get_wealth_trends(range: str = "auto", db: Session = Depends(get_db)):
         "earliest_snapshot_month": snapshots[1],
         "latest_snapshot_month": snapshots[2],
         "is_showing_imported_period": range_label == "Imported period",
+        "provisional_months": provisional_months,
+        "provisional_month_note": (
+            f"{', '.join(provisional_months)} is hidden from the trend until salary/month-end because the current month is incomplete."
+            if provisional_months and range != "all" else None
+        ),
         "expense_modes": {
             "all": "Expenses include visible bank debits, including investments and savings transfers. Cash withdrawals are always hidden.",
             "spend_only": "Expenses exclude transactions categorized as Investments & Savings. Cash withdrawals are always hidden.",

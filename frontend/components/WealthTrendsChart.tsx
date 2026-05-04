@@ -21,6 +21,9 @@ interface MonthData {
   investment_outflow?: number;
   net_worth: number | null;
   has_data: boolean;
+  is_current_month?: boolean;
+  is_provisional?: boolean;
+  visible_in_trend?: boolean;
 }
 
 interface TrendsResponse {
@@ -35,6 +38,8 @@ interface TrendsResponse {
   earliest_snapshot_month?: string | null;
   latest_snapshot_month?: string | null;
   is_showing_imported_period?: boolean;
+  provisional_months?: string[];
+  provisional_month_note?: string | null;
 }
 
 type UploadState = "idle" | "uploading" | "success" | "error";
@@ -284,18 +289,20 @@ export default function WealthTrendsChart() {
   );
 
   const noData = !data || (data.total_transaction_count ?? 0) === 0;
-  const visibleMonths = data?.months.filter((m) => m.has_data).length ?? 0;
+  const trendMonths = (data?.months ?? []).filter((month) => month.visible_in_trend !== false);
+  const hiddenProvisionalMonths = (data?.months ?? []).filter((month) => month.has_data && month.visible_in_trend === false);
+  const visibleMonths = trendMonths.filter((m) => m.has_data).length;
   const uploadCoversTooLittle = Boolean(uploadResult && uploadResult.date_span_days > 0 && uploadResult.date_span_days < 60);
   const importedPeriod = data?.earliest_transaction_date && data.latest_transaction_date
     ? `${fmtDate(data.earliest_transaction_date)} to ${fmtDate(data.latest_transaction_date)}`
     : "";
   const expenseDataKey = expenseMode === "spend_only" ? "displayed_expenses" : "expenses";
   const expenseLabel = expenseMode === "spend_only" ? "Spend" : "Expenses";
-  const chartMonths = (data?.months ?? []).map((month) => ({
+  const chartMonths = trendMonths.map((month) => ({
     ...month,
     displayed_expenses: month.expenses_excluding_investments ?? month.expenses,
   }));
-  const excludedInvestmentTotal = data?.months.reduce((sum, month) => sum + (month.investment_outflow ?? 0), 0) ?? 0;
+  const excludedInvestmentTotal = trendMonths.reduce((sum, month) => sum + (month.investment_outflow ?? 0), 0);
 
   return (
     <div className="flex h-full flex-col gap-3">
@@ -408,6 +415,12 @@ export default function WealthTrendsChart() {
       {uploadCoversTooLittle && uploadResult?.earliest_date && uploadResult.latest_date && (
         <div className="rounded-xl px-3 py-2 text-[11px] leading-snug" style={{ background: "rgba(255,159,10,0.08)", border: "1px solid rgba(255,159,10,0.18)", color: "#ff9f0a" }}>
           This upload covers only {uploadResult.date_span_days} days ({fmtDate(uploadResult.earliest_date)} to {fmtDate(uploadResult.latest_date)}). For a 12-month trend, export a statement covering roughly one full year.
+        </div>
+      )}
+
+      {hiddenProvisionalMonths.length > 0 && data?.provisional_month_note && (
+        <div className="rounded-xl px-3 py-2 text-[11px] leading-snug" style={{ background: "rgba(10,132,255,0.08)", border: "1px solid rgba(10,132,255,0.18)", color: "#64d2ff" }}>
+          {data.provisional_month_note}
         </div>
       )}
 

@@ -1001,8 +1001,13 @@ export interface MonthData {
   month:     string;
   income:    number;
   expenses:  number;
+  expenses_excluding_investments?: number;
+  investment_outflow?: number;
   net_worth: number | null;
   has_data:  boolean;
+  is_current_month?: boolean;
+  is_provisional?: boolean;
+  visible_in_trend?: boolean;
 }
 
 export interface TrendsResponse {
@@ -1017,6 +1022,8 @@ export interface TrendsResponse {
   earliest_snapshot_month?: string | null;
   latest_snapshot_month?: string | null;
   is_showing_imported_period?: boolean;
+  provisional_months?: string[];
+  provisional_month_note?: string | null;
 }
 
 export interface SavingsRateData {
