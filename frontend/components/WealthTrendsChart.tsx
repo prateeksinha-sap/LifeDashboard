@@ -303,11 +303,15 @@ export default function WealthTrendsChart() {
     displayed_expenses: month.expenses_excluding_investments ?? month.expenses,
   }));
   const excludedInvestmentTotal = trendMonths.reduce((sum, month) => sum + (month.investment_outflow ?? 0), 0);
+  const hasProvisionalNotice = provisionalMonths.length > 0 && Boolean(data?.provisional_month_note);
+  const provisionalNotice = provisionalMonths.length === 1
+    ? `${fmtMonth(provisionalMonths[0].month)} is provisional until salary/month-end; use it for progress only.`
+    : `${provisionalMonths.length} months are provisional until salary/month-end; use them for progress only.`;
 
   return (
-    <div className="flex h-full flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
+      <div className="flex shrink-0 items-start justify-between gap-3">
+        <div className="min-w-0">
           <p className="text-[11px] font-medium uppercase tracking-[0.12em]" style={{ color: "rgba(255,255,255,0.35)" }}>
             Wealth Trends
           </p>
@@ -315,13 +319,13 @@ export default function WealthTrendsChart() {
             {data?.range_label ?? "Automatic range"} - income, expenses, savings and net worth
           </p>
           {data && (data.total_transaction_count ?? 0) > 0 && (
-            <p className="mt-1 text-[10px]" style={{ color: data.is_showing_imported_period ? "#ff9f0a" : "rgba(255,255,255,0.3)" }}>
+            <p className="mt-1 text-[10px] leading-snug" style={{ color: data.is_showing_imported_period ? "#ff9f0a" : "rgba(255,255,255,0.3)" }}>
               {visibleMonths} month{visibleMonths === 1 ? "" : "s"} visible from {data.total_transaction_count} imported transactions
               {importedPeriod ? ` (${importedPeriod})` : ""}
             </p>
           )}
           {data && (data.total_transaction_count ?? 0) > 0 && (
-            <p className="mt-1 text-[10px]" style={{ color: expenseMode === "spend_only" ? "#ff9f0a" : "rgba(255,255,255,0.24)" }}>
+            <p className="mt-1 text-[10px] leading-snug" style={{ color: expenseMode === "spend_only" ? "#ff9f0a" : "rgba(255,255,255,0.24)" }}>
               {expenseMode === "spend_only"
                 ? `Red bars exclude investment transfers and cash withdrawals${excludedInvestmentTotal > 0 ? ` (${fmtAxis(excludedInvestmentTotal)} investments hidden across visible months)` : ""}.`
                 : "Red bars include visible bank debits, including investments and savings transfers. Cash withdrawals are hidden."}
@@ -418,9 +422,9 @@ export default function WealthTrendsChart() {
         </div>
       )}
 
-      {provisionalMonths.length > 0 && data?.provisional_month_note && (
-        <div className="rounded-xl px-3 py-2 text-[11px] leading-snug" style={{ background: "rgba(10,132,255,0.08)", border: "1px solid rgba(10,132,255,0.18)", color: "#64d2ff" }}>
-          {data.provisional_month_note}
+      {hasProvisionalNotice && (
+        <div className="shrink-0 rounded-xl px-3 py-1.5 text-[10.5px] leading-snug" style={{ background: "rgba(10,132,255,0.08)", border: "1px solid rgba(10,132,255,0.18)", color: "#64d2ff" }}>
+          {provisionalNotice}
         </div>
       )}
 
@@ -430,9 +434,9 @@ export default function WealthTrendsChart() {
           detail="Click Import CSV and upload a bank statement. A 12-month export is best for first setup; monthly exports are best after that."
         />
       ) : (
-        <div className="min-h-0 flex-1" style={{ minHeight: 180 }}>
+        <div className="min-h-0 flex-1">
           <SafeResponsiveContainer>
-            <ComposedChart data={chartMonths} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+            <ComposedChart data={chartMonths} margin={{ top: 2, right: 4, bottom: 6, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
               <XAxis
                 dataKey="month"
@@ -440,6 +444,7 @@ export default function WealthTrendsChart() {
                 tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
+                height={22}
               />
               <YAxis
                 yAxisId="bars"
@@ -459,7 +464,7 @@ export default function WealthTrendsChart() {
                 width={72}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 10, color: "rgba(255,255,255,0.4)", paddingTop: 8 }} iconType="circle" iconSize={7} />
+              <Legend height={18} wrapperStyle={{ fontSize: 10, color: "rgba(255,255,255,0.4)", paddingTop: 2 }} iconType="circle" iconSize={7} />
               <Bar
                 yAxisId="bars"
                 dataKey="income"
