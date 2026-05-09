@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Cell,
-  Tooltip, Legend,
+  Tooltip,
 } from "recharts";
 import {
   Upload, CheckCircle, AlertCircle, Loader, X, ArrowDownLeft, ArrowUpRight,
@@ -118,6 +118,12 @@ function fmtDate(value?: string | null): string {
   if (!value) return "";
   const d = new Date(`${value}T00:00:00`);
   return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function fmtShortDate(value?: string | null): string {
+  if (!value) return "";
+  const d = new Date(`${value}T00:00:00`);
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 }
 
 const CustomTooltip = ({
@@ -293,9 +299,6 @@ export default function WealthTrendsChart() {
   const provisionalMonths = trendMonths.filter((month) => month.has_data && month.is_provisional);
   const visibleMonths = trendMonths.filter((m) => m.has_data).length;
   const uploadCoversTooLittle = Boolean(uploadResult && uploadResult.date_span_days > 0 && uploadResult.date_span_days < 60);
-  const importedPeriod = data?.earliest_transaction_date && data.latest_transaction_date
-    ? `${fmtDate(data.earliest_transaction_date)} to ${fmtDate(data.latest_transaction_date)}`
-    : "";
   const expenseDataKey = expenseMode === "spend_only" ? "displayed_expenses" : "expenses";
   const expenseLabel = expenseMode === "spend_only" ? "Spend" : "Expenses";
   const chartMonths = trendMonths.map((month) => ({
@@ -307,6 +310,12 @@ export default function WealthTrendsChart() {
   const provisionalNotice = provisionalMonths.length === 1
     ? `${fmtMonth(provisionalMonths[0].month)} is provisional until salary/month-end; use it for progress only.`
     : `${provisionalMonths.length} months are provisional until salary/month-end; use them for progress only.`;
+  const compactPeriod = data?.earliest_transaction_date && data.latest_transaction_date
+    ? `${fmtShortDate(data.earliest_transaction_date)}-${fmtShortDate(data.latest_transaction_date)}`
+    : "";
+  const compactRange = data && (data.total_transaction_count ?? 0) > 0
+    ? `${visibleMonths} months • ${data.total_transaction_count} txns${compactPeriod ? ` • ${compactPeriod}` : ""}`
+    : data?.range_label ?? "Automatic range";
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
@@ -316,20 +325,28 @@ export default function WealthTrendsChart() {
             Wealth Trends
           </p>
           <p className="mt-0.5 text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>
-            {data?.range_label ?? "Automatic range"} - income, expenses, savings and net worth
+            {data?.range_label ?? "Automatic range"} - income, spend and net worth
           </p>
           {data && (data.total_transaction_count ?? 0) > 0 && (
             <p className="mt-1 text-[10px] leading-snug" style={{ color: data.is_showing_imported_period ? "#ff9f0a" : "rgba(255,255,255,0.3)" }}>
-              {visibleMonths} month{visibleMonths === 1 ? "" : "s"} visible from {data.total_transaction_count} imported transactions
-              {importedPeriod ? ` (${importedPeriod})` : ""}
+              {compactRange}
             </p>
           )}
           {data && (data.total_transaction_count ?? 0) > 0 && (
             <p className="mt-1 text-[10px] leading-snug" style={{ color: expenseMode === "spend_only" ? "#ff9f0a" : "rgba(255,255,255,0.24)" }}>
               {expenseMode === "spend_only"
-                ? `Red bars exclude investment transfers and cash withdrawals${excludedInvestmentTotal > 0 ? ` (${fmtAxis(excludedInvestmentTotal)} investments hidden across visible months)` : ""}.`
-                : "Red bars include visible bank debits, including investments and savings transfers. Cash withdrawals are hidden."}
+                ? `True spend excludes investments/cash${excludedInvestmentTotal > 0 ? ` (${fmtAxis(excludedInvestmentTotal)} hidden)` : ""}.`
+                : "All debits includes investments; cash withdrawals hidden."}
             </p>
+          )}
+          {hasProvisionalNotice && (
+            <span
+              className="mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold"
+              title={data?.provisional_month_note || provisionalNotice}
+              style={{ background: "rgba(10,132,255,0.08)", border: "1px solid rgba(10,132,255,0.18)", color: "#64d2ff" }}
+            >
+              {provisionalMonths.length === 1 ? `${fmtMonth(provisionalMonths[0].month)} provisional` : `${provisionalMonths.length} provisional months`}
+            </span>
           )}
         </div>
 
@@ -422,12 +439,6 @@ export default function WealthTrendsChart() {
         </div>
       )}
 
-      {hasProvisionalNotice && (
-        <div className="shrink-0 rounded-xl px-3 py-1.5 text-[10.5px] leading-snug" style={{ background: "rgba(10,132,255,0.08)", border: "1px solid rgba(10,132,255,0.18)", color: "#64d2ff" }}>
-          {provisionalNotice}
-        </div>
-      )}
-
       {noData ? (
         <EmptyState
           title="No bank statement imported yet"
@@ -464,7 +475,6 @@ export default function WealthTrendsChart() {
                 width={72}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Legend height={18} wrapperStyle={{ fontSize: 10, color: "rgba(255,255,255,0.4)", paddingTop: 2 }} iconType="circle" iconSize={7} />
               <Bar
                 yAxisId="bars"
                 dataKey="income"

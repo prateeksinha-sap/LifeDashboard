@@ -109,7 +109,7 @@ export default function DashboardPage() {
             <BentoCard glow className="h-[730px] xl:row-span-2">
               <WealthCenter />
             </BentoCard>
-            <BentoCard className="h-[330px] xl:col-span-2">
+            <BentoCard className="h-[360px] xl:col-span-2">
               <WealthTrendsChart />
             </BentoCard>
             <BentoCard className="h-[330px]">
