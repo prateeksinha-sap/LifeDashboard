@@ -176,7 +176,7 @@ def _cas_signals(text: str) -> tuple[bool, bool, bool]:
     )
     exact_cas = _has_exact_token(lower, "cas")
     mf_context = phrase_signal or provider_signal or "mutual fund" in lower or _has_exact_token(lower, "folio")
-    return provider_signal or phrase_signal, exact_cas, mf_context
+    return phrase_signal or (exact_cas and mf_context), exact_cas, mf_context
 
 
 def _cas_password_candidates(password: str) -> list[str]:
@@ -184,9 +184,15 @@ def _cas_password_candidates(password: str) -> list[str]:
     stripped = raw.strip().strip('"').strip("'")
     compact = re.sub(r"[\s\\/-]+", "", stripped)
     candidates = [raw, stripped, compact, stripped.upper(), stripped.lower(), compact.upper(), compact.lower()]
-    # Common CAS format is PAN + DDMMYYYY; PAN is normally uppercase.
-    if len(compact) > 10:
-        candidates.append(compact[:10].upper() + compact[10:])
+    upper_compact = compact.upper()
+    pan_match = re.match(r"^[A-Z]{5}[0-9]{4}[A-Z]", upper_compact)
+    if pan_match:
+        pan = pan_match.group(0)
+        candidates.append(pan)
+        candidates.append(pan.lower())
+        # Some providers use PAN + DOB; PAN itself should stay uppercase.
+        if len(compact) > 10:
+            candidates.append(pan + compact[10:])
     result: list[str] = []
     for candidate in candidates:
         if candidate and candidate not in result:
@@ -198,7 +204,8 @@ def classify_file(path: Path, context: dict[str, Any] | None = None) -> FileClas
     context = context or {}
     suffix = path.suffix.lower()
     filename = path.name.lower()
-    joined_context = " ".join(str(context.get(k) or "") for k in ("subject", "sender", "source_key")).lower()
+    # source_key contains opaque Gmail attachment ids; do not use it for semantic classification.
+    joined_context = " ".join(str(context.get(k) or "") for k in ("subject", "sender")).lower()
     combined = f"{filename} {joined_context}"
     sample = _read_sample(path)
     text = _decode_sample(sample)

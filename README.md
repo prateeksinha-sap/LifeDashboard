@@ -116,8 +116,9 @@ classification and sector.
 ### Mutual Funds
 
 Use CAS PDF import with the CAS password configured in `backend/.env` or entered
-through the UI where available. The app stores fund holdings, refreshes NAVs, and
-uses `mfdata.in` to get underlying stock portfolios.
+through the UI where available. CDSL e-CAS files usually open with PAN uppercase;
+some other CAS exports use PAN+DOB. The app stores fund holdings, refreshes NAVs,
+and uses `mfdata.in` to get underlying stock portfolios.
 
 ### ETF And Index Look-Through
 

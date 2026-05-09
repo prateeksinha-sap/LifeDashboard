@@ -203,7 +203,11 @@ def import_cdsl_cas(pdf_path: str, password: str, db):
                     })
 
     if not holdings:
-        raise ValueError("Could not find active mutual fund holdings in the CAS PDF.")
+        raise ValueError(
+            "CDSL CAS opened, but no complete per-scheme holdings valuation table was found. "
+            "This is usually a monthly transaction/detail CAS; upload a CAMS/KFintech holdings CAS "
+            "or a CAS that includes active units and valuation."
+        )
 
     db.query(MFHolding).delete()
     for item in holdings:
