@@ -77,10 +77,13 @@ def delete_todo(todo_id: int, db: Session = Depends(get_db)):
 # ════════════════════════════════════════════════════════════════════
 
 class ActionableIn(BaseModel):
-    task_description: str
-    due_date:         Optional[str]  = None   # "YYYY-MM-DD"
-    priority:         Optional[str]  = "Medium"
-    source:           Optional[str]  = "Manual"
+    task_description:  str
+    due_date:          Optional[str]  = None   # "YYYY-MM-DD"
+    priority:          Optional[str]  = "Medium"
+    source:            Optional[str]  = "Manual"
+    sender:            Optional[str]  = None
+    subject:           Optional[str]  = None
+    original_email_id: Optional[str]  = None
 
 
 class ActionablePut(BaseModel):
@@ -136,11 +139,14 @@ def create_actionable(body: ActionableIn, db: Session = Depends(get_db)):
             pass
 
     a = Actionable(
-        source           = body.source or "Manual",
-        task_description = body.task_description,
-        due_date         = due,
-        priority         = body.priority or "Medium",
-        status           = "Pending",
+        source             = body.source or "Manual",
+        task_description   = body.task_description,
+        due_date           = due,
+        priority           = body.priority or "Medium",
+        status             = "Pending",
+        sender             = body.sender,
+        subject            = body.subject,
+        original_email_id  = body.original_email_id,
     )
     db.add(a)
     db.commit()

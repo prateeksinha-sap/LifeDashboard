@@ -43,6 +43,11 @@ backend/uvicorn.log
 artifacts/
 REVIEW_FINDINGS.md
 
+# Local one-off helpers that may include personal Gmail/portfolio details
+START_DASHBOARD.bat
+backend/scripts/seed_inbox.py
+backend/scripts/sync_cas_from_gmail.py
+
 # Claude Code local settings
 .claude/
 
