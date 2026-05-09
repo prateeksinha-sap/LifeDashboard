@@ -20,6 +20,7 @@ backend/automation_state.json
 # Database — local data, not for git
 backend/dashboard.db
 backend/cas_extracted.html
+runtime_backups/
 
 # CAS / Zerodha files — personal financial data
 backend/cas.pdf
