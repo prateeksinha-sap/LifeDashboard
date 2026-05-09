@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { DatabaseZap, Loader2, RefreshCw } from "lucide-react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
+import { DatabaseZap, Folder, Loader2, Mail, RefreshCw } from "lucide-react";
 import {
   AutomationStatus,
   fetchAutomationStatus,
@@ -46,6 +46,46 @@ function SourcePill({ label, ok, detail }: { label: string; ok: boolean; detail:
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}66` }} />
       </div>
       <p className="mt-0.5 truncate text-[10px]" style={{ color: "rgba(255,255,255,0.32)" }}>{detail}</p>
+    </div>
+  );
+}
+
+function ActivityPill({
+  icon,
+  label,
+  time,
+  status,
+  color,
+  title,
+}: {
+  icon: ReactNode;
+  label: string;
+  time: string;
+  status: string;
+  color: string;
+  title?: string;
+}) {
+  return (
+    <div
+      className="min-w-0 rounded-lg px-2.5 py-2"
+      title={title || status}
+      style={{
+        background: "linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.025))",
+        border: "1px solid rgba(255,255,255,0.075)",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex min-w-0 items-center gap-1.5 truncate text-[10px] font-semibold uppercase tracking-wide" style={{ color }}>
+          <span className="shrink-0">{icon}</span>
+          <span className="truncate">{label}</span>
+        </p>
+        <p className="shrink-0 text-[9.5px] tabular-nums" style={{ color: "rgba(255,255,255,0.34)" }}>
+          {time}
+        </p>
+      </div>
+      <p className="mt-1 truncate text-[10.5px] leading-snug" style={{ color: "rgba(255,255,255,0.6)" }}>
+        {status}
+      </p>
     </div>
   );
 }
@@ -120,7 +160,7 @@ export default function DataFreshness() {
     : gmailIssueCount > 0
       ? `${gmailIssueCount} extraction errors`
       : gmailResult
-        ? `${gmailResult.candidates ?? 0} candidates, ${gmailResult.actionables_created ?? 0} actions, ${gmailResult.bills_created ?? 0} bills`
+        ? `${gmailResult.candidates ?? 0} candidates · ${gmailResult.actionables_created ?? 0} actions · ${gmailResult.bills_created ?? 0} bills`
         : "Ready";
   const gmailTone = gmailError || gmailIssueCount > 0 ? "#ff453a" : "#64d2ff";
   const gmailDetail = gmailError
@@ -130,6 +170,8 @@ export default function DataFreshness() {
       : "Ready for current plus previous month sync, then deltas.";
   const fileIngestion = automation?.ingestion;
   const fileIngestionError = fileIngestion?.last_error;
+  const fileIngestionTone = fileIngestionError ? "#ff453a" : "#30d158";
+  const fileIngestionStatus = fileIngestionError || (fileIngestion?.auto_import ? "Auto-importing safe files" : "Staging files for review");
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
@@ -185,36 +227,23 @@ export default function DataFreshness() {
         ))}
       </div>
 
-      <div
-        className="min-h-0 rounded-lg px-2.5 py-2"
-        title={gmailDetail}
-        style={{ background: gmailError || gmailIssueCount > 0 ? "rgba(255,69,58,0.07)" : "rgba(10,132,255,0.055)", border: `1px solid ${gmailError || gmailIssueCount > 0 ? "rgba(255,69,58,0.16)" : "rgba(10,132,255,0.14)"}` }}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <p className="shrink-0 text-[10px] font-semibold uppercase tracking-wide" style={{ color: gmailTone }}>
-            Gmail sync
-          </p>
-          <p className="truncate text-right text-[10px]" style={{ color: "rgba(255,255,255,0.38)" }}>{fmtTime(automation?.gmail.last_sync)}</p>
-        </div>
-        <p className="mt-1 truncate text-[10.5px] leading-snug" style={{ color: "rgba(255,255,255,0.56)" }}>
-          {gmailStatusText}
-        </p>
-      </div>
-
-      <div
-        className="min-h-0 rounded-lg px-2.5 py-2"
-        title={fileIngestion?.drop_folder}
-        style={{ background: fileIngestionError ? "rgba(255,69,58,0.07)" : "rgba(48,209,88,0.055)", border: `1px solid ${fileIngestionError ? "rgba(255,69,58,0.16)" : "rgba(48,209,88,0.14)"}` }}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <p className="shrink-0 text-[10px] font-semibold uppercase tracking-wide" style={{ color: fileIngestionError ? "#ff453a" : "#30d158" }}>
-            File ingestion
-          </p>
-          <p className="truncate text-right text-[10px]" style={{ color: "rgba(255,255,255,0.38)" }}>{fmtTime(fileIngestion?.last_scan)}</p>
-        </div>
-        <p className="mt-1 truncate text-[10.5px] leading-snug" style={{ color: "rgba(255,255,255,0.56)" }}>
-          {fileIngestionError || (fileIngestion?.auto_import ? "Auto-importing safe files" : "Staging files for review")}
-        </p>
+      <div className="grid shrink-0 grid-cols-2 gap-2">
+        <ActivityPill
+          icon={<Mail size={12} />}
+          label="Gmail"
+          time={fmtTime(automation?.gmail.last_sync)}
+          status={gmailStatusText}
+          color={gmailTone}
+          title={gmailDetail}
+        />
+        <ActivityPill
+          icon={<Folder size={12} />}
+          label="Files"
+          time={fmtTime(fileIngestion?.last_scan)}
+          status={fileIngestionStatus}
+          color={fileIngestionTone}
+          title={fileIngestion?.drop_folder || fileIngestionStatus}
+        />
       </div>
 
     </div>
