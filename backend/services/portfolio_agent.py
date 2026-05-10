@@ -372,29 +372,41 @@ def import_reports(db: Session, report_dir: Path | None = None) -> dict[str, Any
         db.add(run)
         db.flush()
 
+        seen_recommendations: set[tuple[str, str]] = set()
         for row in _normalise_recommendations(report):
-            rec = PortfolioAgentRecommendation(
-                run_id=run_id,
-                run_db_id=run.id,
-                source_type=row["source_type"],
-                fingerprint=row["fingerprint"],
-                priority=row["priority"],
-                ticker=row["ticker"],
-                name=row["name"],
-                action=row["action"],
-                timing=row["timing"],
-                source_agent=row["source_agent"],
-                conviction=row["conviction"],
-                estimated_amount_inr=row["estimated_amount_inr"],
-                suggested_allocation_pct=row["suggested_allocation_pct"],
-                target_price=row["target_price"],
-                rationale=row["rationale"],
-                raw_json=_json_dump(row["raw"]),
+            dedupe_key = (row["source_type"], row["fingerprint"])
+            if dedupe_key in seen_recommendations:
+                result.setdefault("deduped_recommendations", 0)
+                result["deduped_recommendations"] += 1
+                continue
+            seen_recommendations.add(dedupe_key)
+
+            rec = (
+                db.query(PortfolioAgentRecommendation)
+                .filter_by(run_id=run_id, source_type=row["source_type"], fingerprint=row["fingerprint"])
+                .first()
             )
-            db.add(rec)
+            if not rec:
+                rec = PortfolioAgentRecommendation(run_id=run_id, run_db_id=run.id, source_type=row["source_type"], fingerprint=row["fingerprint"])
+                db.add(rec)
+                result["imported_recommendations"] += 1
+
+            rec.run_db_id = run.id
+            rec.priority = row["priority"]
+            rec.ticker = row["ticker"]
+            rec.name = row["name"]
+            rec.action = row["action"]
+            rec.timing = row["timing"]
+            rec.source_agent = row["source_agent"]
+            rec.conviction = row["conviction"]
+            rec.estimated_amount_inr = row["estimated_amount_inr"]
+            rec.suggested_allocation_pct = row["suggested_allocation_pct"]
+            rec.target_price = row["target_price"]
+            rec.rationale = row["rationale"]
+            rec.raw_json = _json_dump(row["raw"])
+            rec.updated_at = datetime.utcnow()
             db.flush()
             _upsert_decision_shell(db, rec)
-            result["imported_recommendations"] += 1
 
         result["imported_runs"] += 1
 
