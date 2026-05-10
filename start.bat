@@ -59,7 +59,7 @@ if errorlevel 1 (
 call :CheckUrl "%FRONTEND_URL%"
 if errorlevel 1 (
   echo [2/3] Starting frontend on :%FRONTEND_PORT%...
-  start "LifeDash Frontend" cmd /k "cd /d ""%FRONTEND%"" && set ""NEXT_PUBLIC_API_BASE=%API_BASE%"" && npx next dev -p %FRONTEND_PORT%"
+  start "LifeDash Frontend" cmd /k "cd /d ""%FRONTEND%"" && npx next dev -p %FRONTEND_PORT%"
 ) else (
   echo [2/3] Frontend already running on :%FRONTEND_PORT%.
 )

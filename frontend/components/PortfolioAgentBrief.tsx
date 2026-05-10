@@ -249,12 +249,18 @@ export default function PortfolioAgentBrief() {
   const load = useCallback(async (syncFirst = true, showInitialLoading = false) => {
     if (showInitialLoading) setLoading(true);
     setError(null);
+    let syncError: string | null = null;
     try {
       if (syncFirst) {
         setSyncing(true);
-        await syncPortfolioAgentReports();
+        try {
+          await syncPortfolioAgentReports();
+        } catch (err) {
+          syncError = err instanceof Error ? err.message : "Could not sync portfolio-agent reports";
+        }
       }
       setBrief(await fetchPortfolioAgentBrief());
+      setError(syncError);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Portfolio Agent unavailable");
     } finally {
@@ -377,6 +383,12 @@ export default function PortfolioAgentBrief() {
           <div className="flex shrink-0 items-start gap-2 rounded-md px-2.5 py-1" style={{ color: "#64d2ff", background: "rgba(100,210,255,0.07)", border: "1px solid rgba(100,210,255,0.16)" }}>
             <ShieldAlert size={13} className="mt-0.5 shrink-0" />
             <p className="text-[10px] leading-snug">Showing latest LIVE report; {newerNonLiveCount} newer mock run{newerNonLiveCount === 1 ? "" : "s"} remain in History.</p>
+          </div>
+        )}
+        {error && (
+          <div className="flex shrink-0 items-start gap-2 rounded-md px-2.5 py-1" style={{ color: "#ffbf69", background: "rgba(255,159,10,0.07)", border: "1px solid rgba(255,159,10,0.16)" }}>
+            <ShieldAlert size={13} className="mt-0.5 shrink-0" />
+            <p className="line-clamp-2 text-[10px] leading-snug">Showing stored brief; sync failed: {error}</p>
           </div>
         )}
 
